@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { MemberFieldType, Role } from "@/constants/enums";
+import { AuditAction, AuditEntityType, MemberFieldType, Role } from "@/constants/enums";
 
 export const loginSchema = z.object({
   email: z.email({ message: "Invalid email address" }),
@@ -428,3 +428,19 @@ export const bulkImportSchema = z.object({
 });
 
 export type BulkImportPayload = z.infer<typeof bulkImportSchema>;
+
+export const auditLogQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  entityType: z
+    .enum(Object.values(AuditEntityType) as [AuditEntityType, ...AuditEntityType[]])
+    .optional(),
+  action: z.enum(Object.values(AuditAction) as [AuditAction, ...AuditAction[]]).optional(),
+  actorId: z.uuid().optional(),
+  entityId: z.string().max(64).optional(),
+  from: z.iso.datetime().optional(),
+  to: z.iso.datetime().optional(),
+  q: z.string().trim().max(200).optional(),
+});
+
+export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;

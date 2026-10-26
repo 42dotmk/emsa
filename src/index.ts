@@ -6,6 +6,7 @@ import index from "./index.html";
 import { db } from "./lib/db";
 import { env } from "./lib/env";
 import { escapeHtml } from "./lib/utils";
+import { auditLogRoutes } from "./routes/audit-logs";
 import { authRoutes } from "./routes/auth";
 import { dashboardRoutes } from "./routes/dashboard";
 import { galleryRoutes } from "./routes/gallery";
@@ -105,6 +106,7 @@ const server = serve({
           return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
         }
       : index,
+    ...auditLogRoutes,
     ...authRoutes,
     ...galleryRoutes,
     ...memberFieldRoutes,

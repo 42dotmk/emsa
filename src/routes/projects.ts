@@ -1,7 +1,7 @@
 import { and, count, desc, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import { z } from "zod";
 
-import { Role } from "@/constants/enums";
+import { AuditAction, AuditEntityType, Role } from "@/constants/enums";
 import { ApiRoutes } from "@/constants/routes";
 import { projectSchema, updateProjectSchema } from "@/constants/schemas";
 import {
@@ -17,6 +17,16 @@ import {
   workshopRegistrations,
   workshops,
 } from "@/db/schema";
+import {
+  createdChanges,
+  deletedChanges,
+  diffChanges,
+  lookupPillarName,
+  lookupProjectTitle,
+  lookupUserName,
+  recordAudit,
+  relabelReference,
+} from "@/lib/audit";
 import { db } from "@/lib/db";
 import { type BunRequest, HttpError, parseBody, withRole } from "@/lib/middleware";
 import {
@@ -26,6 +36,26 @@ import {
   validateCertificateContentType,
   validateImageContentType,
 } from "@/lib/s3";
+
+async function getRegistrationContext(registrationId: string) {
+  const [row] = await db
+    .select({
+      userId: projectRegistrations.userId,
+      userName: users.name,
+      projectId: projects.id,
+      projectTitle: projects.title,
+    })
+    .from(projectRegistrations)
+    .innerJoin(users, eq(projectRegistrations.userId, users.id))
+    .innerJoin(projects, eq(projectRegistrations.projectId, projects.id))
+    .where(eq(projectRegistrations.id, registrationId))
+    .limit(1);
+  return row;
+}
+
+async function projectMetadata(projectId: string) {
+  return { projectId, projectTitle: (await lookupProjectTitle(projectId)) ?? null };
+}
 
 // Helper: compute per-package availableSpots given registration counts
 async function buildPackagesWithAvailability(projectIds: string[]) {
@@ -596,7 +626,7 @@ const getProjectsAdmin = withRole(Role.ADMIN, async () => {
   );
 });
 
-const createProject = withRole(Role.ADMIN, async (req) => {
+const createProject = withRole(Role.ADMIN, async (req, user) => {
   const { imageUrls, startingAt, endingAt, registrationOpensAt, registrationClosesAt, ...rest } =
     await parseBody(req, projectSchema);
 
@@ -624,15 +654,32 @@ const createProject = withRole(Role.ADMIN, async (req) => {
     return newProject;
   });
 
+  await recordAudit(user, {
+    action: AuditAction.CREATE,
+    entityType: AuditEntityType.PROJECT,
+    entityId: project.id,
+    entityLabel: project.title,
+    changes: await relabelReference(
+      createdChanges(project),
+      "pillarId",
+      "pillar",
+      lookupPillarName
+    ),
+    metadata: imageUrls.length > 0 ? { imagesAdded: imageUrls.length } : null,
+  });
+
   return Response.json(project, { status: 201 });
 });
 
-const updateProject = withRole<{ id: string }>(Role.ADMIN, async (req) => {
+const updateProject = withRole<{ id: string }>(Role.ADMIN, async (req, user) => {
   const { id } = req.params;
   const { imageUrls, startingAt, endingAt, registrationOpensAt, registrationClosesAt, ...rest } =
     await parseBody(req, updateProjectSchema);
 
+  const [before] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+
   let imagesToDelete: { url: string }[] = [];
+  let imagesAdded = 0;
 
   const updated = await db.transaction(async (tx) => {
     if (rest.isPinned === true) {
@@ -690,6 +737,7 @@ const updateProject = withRole<{ id: string }>(Role.ADMIN, async (req) => {
         await tx
           .insert(projectImages)
           .values(toInsert.map((url) => ({ projectId: id, url, order: newUrlOrder.get(url)! })));
+        imagesAdded = toInsert.length;
       }
 
       const toUpdateOrder = existingImages.filter((img) => newUrlOrder.has(img.url));
@@ -708,10 +756,28 @@ const updateProject = withRole<{ id: string }>(Role.ADMIN, async (req) => {
 
   await deleteObjects(imagesToDelete.map((img) => img.url));
 
+  const changes = await relabelReference(
+    diffChanges(before ?? {}, updated),
+    "pillarId",
+    "pillar",
+    lookupPillarName
+  );
+  const imagesChanged = imagesAdded > 0 || imagesToDelete.length > 0;
+  if (changes || imagesChanged) {
+    await recordAudit(user, {
+      action: AuditAction.UPDATE,
+      entityType: AuditEntityType.PROJECT,
+      entityId: updated.id,
+      entityLabel: updated.title,
+      changes,
+      metadata: imagesChanged ? { imagesAdded, imagesRemoved: imagesToDelete.length } : null,
+    });
+  }
+
   return Response.json(updated);
 });
 
-const deleteProject = withRole<{ id: string }>(Role.ADMIN, async (req) => {
+const deleteProject = withRole<{ id: string }>(Role.ADMIN, async (req, user) => {
   const { id } = req.params;
 
   const { deleted, images } = await db.transaction(async (tx) => {
@@ -720,10 +786,7 @@ const deleteProject = withRole<{ id: string }>(Role.ADMIN, async (req) => {
       .from(projectImages)
       .where(eq(projectImages.projectId, id));
 
-    const [deletedProject] = await tx
-      .delete(projects)
-      .where(eq(projects.id, id))
-      .returning({ id: projects.id });
+    const [deletedProject] = await tx.delete(projects).where(eq(projects.id, id)).returning();
 
     return { deleted: deletedProject, images: projectImages_ };
   });
@@ -733,6 +796,19 @@ const deleteProject = withRole<{ id: string }>(Role.ADMIN, async (req) => {
   }
 
   await deleteObjects(images.map((img) => img.url));
+
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.PROJECT,
+    entityId: deleted.id,
+    entityLabel: deleted.title,
+    changes: await relabelReference(
+      deletedChanges(deleted),
+      "pillarId",
+      "pillar",
+      lookupPillarName
+    ),
+  });
 
   return Response.json({ success: true });
 });
@@ -802,7 +878,7 @@ const updateRegistrationAttended = withRole<{ id: string }>(Role.ADMIN, async (r
   return Response.json(updated);
 });
 
-const addProjectRegistration = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const addProjectRegistration = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
   const body = await parseBody(
     req,
@@ -833,17 +909,23 @@ const addProjectRegistration = withRole<{ id: string }>(Role.SUPER_ADMIN, async 
     .values({ projectId: id, userId: body.userId, packageId: body.packageId ?? null })
     .returning();
 
+  if (registration) {
+    await recordAudit(user, {
+      action: AuditAction.CREATE,
+      entityType: AuditEntityType.REGISTRATION,
+      entityId: registration.id,
+      entityLabel: (await lookupUserName(body.userId)) ?? body.userId,
+      metadata: { ...(await projectMetadata(id)), userId: body.userId },
+    });
+  }
+
   return Response.json(registration, { status: 201 });
 });
 
-const deleteProjectRegistration = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const deleteProjectRegistration = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
 
-  const [reg] = await db
-    .select({ userId: projectRegistrations.userId, projectId: projectRegistrations.projectId })
-    .from(projectRegistrations)
-    .where(eq(projectRegistrations.id, id))
-    .limit(1);
+  const reg = await getRegistrationContext(id);
 
   if (!reg) return Response.json({ error: "Registration not found" }, { status: 404 });
 
@@ -868,6 +950,14 @@ const deleteProjectRegistration = withRole<{ id: string }>(Role.SUPER_ADMIN, asy
     await tx.delete(projectRegistrations).where(eq(projectRegistrations.id, id));
   });
 
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.REGISTRATION,
+    entityId: id,
+    entityLabel: reg.userName,
+    metadata: { projectId: reg.projectId, projectTitle: reg.projectTitle, userId: reg.userId },
+  });
+
   return Response.json({ success: true });
 });
 
@@ -889,20 +979,26 @@ const getCertificateUploadUrl = withRole<{ id: string }>(Role.ADMIN, async (req)
   return Response.json({ uploadUrl, fileUrl });
 });
 
-const saveCertificate = withRole<{ id: string }>(Role.ADMIN, async (req) => {
+const saveCertificate = withRole<{ id: string }>(Role.ADMIN, async (req, user) => {
   const { id } = req.params;
   const body = await parseBody(req, z.object({ url: z.url(), filename: z.string().min(1) }));
 
-  const [reg] = await db
-    .select({ id: projectRegistrations.id })
-    .from(projectRegistrations)
-    .where(eq(projectRegistrations.id, id))
-    .limit(1);
+  const reg = await getRegistrationContext(id);
 
   if (!reg) return Response.json({ error: "Registration not found" }, { status: 404 });
 
+  const auditCertificate = (action: AuditAction, previousFilename: string | null) =>
+    recordAudit(user, {
+      action,
+      entityType: AuditEntityType.CERTIFICATE,
+      entityId: id,
+      entityLabel: reg.userName,
+      changes: { filename: { from: previousFilename, to: body.filename } },
+      metadata: { projectId: reg.projectId, projectTitle: reg.projectTitle, userId: reg.userId },
+    });
+
   const [existing] = await db
-    .select({ url: registrationCertificates.url })
+    .select({ url: registrationCertificates.url, filename: registrationCertificates.filename })
     .from(registrationCertificates)
     .where(eq(registrationCertificates.registrationId, id))
     .limit(1);
@@ -914,6 +1010,7 @@ const saveCertificate = withRole<{ id: string }>(Role.ADMIN, async (req) => {
       .where(eq(registrationCertificates.registrationId, id))
       .returning();
     deleteObject(existing.url).catch(console.error);
+    await auditCertificate(AuditAction.UPDATE, existing.filename);
     return Response.json(updated);
   }
 
@@ -921,14 +1018,15 @@ const saveCertificate = withRole<{ id: string }>(Role.ADMIN, async (req) => {
     .insert(registrationCertificates)
     .values({ registrationId: id, url: body.url, filename: body.filename })
     .returning();
+  await auditCertificate(AuditAction.CREATE, null);
   return Response.json(created, { status: 201 });
 });
 
-const deleteCertificate = withRole<{ id: string }>(Role.ADMIN, async (req) => {
+const deleteCertificate = withRole<{ id: string }>(Role.ADMIN, async (req, user) => {
   const { id } = req.params;
 
   const [cert] = await db
-    .select({ url: registrationCertificates.url })
+    .select({ url: registrationCertificates.url, filename: registrationCertificates.filename })
     .from(registrationCertificates)
     .where(eq(registrationCertificates.registrationId, id))
     .limit(1);
@@ -938,6 +1036,18 @@ const deleteCertificate = withRole<{ id: string }>(Role.ADMIN, async (req) => {
   await db.delete(registrationCertificates).where(eq(registrationCertificates.registrationId, id));
 
   deleteObject(cert.url).catch(console.error);
+
+  const reg = await getRegistrationContext(id);
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.CERTIFICATE,
+    entityId: id,
+    entityLabel: reg?.userName ?? id,
+    changes: { filename: { from: cert.filename, to: null } },
+    metadata: reg
+      ? { projectId: reg.projectId, projectTitle: reg.projectTitle, userId: reg.userId }
+      : null,
+  });
 
   return Response.json({ success: true });
 });
@@ -949,7 +1059,7 @@ const getProjectPackages = withRole<{ id: string }>(Role.ADMIN, async (req) => {
   return Response.json(packagesByProject[id] ?? []);
 });
 
-const createProjectPackage = withRole<{ id: string }>(Role.ADMIN, async (req) => {
+const createProjectPackage = withRole<{ id: string }>(Role.ADMIN, async (req, user) => {
   const { id } = req.params;
   const body = await parseBody(
     req,
@@ -963,7 +1073,7 @@ const createProjectPackage = withRole<{ id: string }>(Role.ADMIN, async (req) =>
   );
 
   const [project] = await db
-    .select({ id: projects.id })
+    .select({ id: projects.id, title: projects.title })
     .from(projects)
     .where(eq(projects.id, id))
     .limit(1);
@@ -995,12 +1105,23 @@ const createProjectPackage = withRole<{ id: string }>(Role.ADMIN, async (req) =>
     })
     .returning();
 
+  if (pkg) {
+    await recordAudit(user, {
+      action: AuditAction.CREATE,
+      entityType: AuditEntityType.PACKAGE,
+      entityId: pkg.id,
+      entityLabel: pkg.name,
+      changes: createdChanges({ ...pkg, projectId: undefined }),
+      metadata: { projectId: id, projectTitle: project.title },
+    });
+  }
+
   return Response.json(pkg, { status: 201 });
 });
 
 const updateProjectPackage = withRole<{ id: string; packageId: string }>(
   Role.ADMIN,
-  async (req) => {
+  async (req, user) => {
     const { packageId, id } = req.params;
     const body = await parseBody(
       req,
@@ -1029,6 +1150,12 @@ const updateProjectPackage = withRole<{ id: string; packageId: string }>(
 
     const clearIndividualMax = body.capacityPoolId !== undefined && body.capacityPoolId !== null;
 
+    const [before] = await db
+      .select()
+      .from(projectPackages)
+      .where(and(eq(projectPackages.id, packageId), eq(projectPackages.projectId, id)))
+      .limit(1);
+
     const [updated] = await db
       .update(projectPackages)
       .set({
@@ -1044,21 +1171,44 @@ const updateProjectPackage = withRole<{ id: string; packageId: string }>(
       .returning();
 
     if (!updated) return Response.json({ error: "Package not found" }, { status: 404 });
+
+    const changes = diffChanges(before ?? {}, updated);
+    if (changes) {
+      await recordAudit(user, {
+        action: AuditAction.UPDATE,
+        entityType: AuditEntityType.PACKAGE,
+        entityId: updated.id,
+        entityLabel: updated.name,
+        changes,
+        metadata: await projectMetadata(id),
+      });
+    }
+
     return Response.json(updated);
   }
 );
 
 const deleteProjectPackage = withRole<{ id: string; packageId: string }>(
   Role.ADMIN,
-  async (req) => {
+  async (req, user) => {
     const { packageId, id } = req.params;
 
     const [deleted] = await db
       .delete(projectPackages)
       .where(and(eq(projectPackages.id, packageId), eq(projectPackages.projectId, id)))
-      .returning({ id: projectPackages.id });
+      .returning();
 
     if (!deleted) return Response.json({ error: "Package not found" }, { status: 404 });
+
+    await recordAudit(user, {
+      action: AuditAction.DELETE,
+      entityType: AuditEntityType.PACKAGE,
+      entityId: deleted.id,
+      entityLabel: deleted.name,
+      changes: deletedChanges({ ...deleted, projectId: undefined }),
+      metadata: await projectMetadata(id),
+    });
+
     return Response.json({ success: true });
   }
 );
@@ -1076,7 +1226,7 @@ const getProjectCapacityPools = withRole<{ id: string }>(Role.ADMIN, async (req)
   return Response.json(pools);
 });
 
-const createProjectCapacityPool = withRole<{ id: string }>(Role.ADMIN, async (req) => {
+const createProjectCapacityPool = withRole<{ id: string }>(Role.ADMIN, async (req, user) => {
   const { id } = req.params;
   const body = await parseBody(
     req,
@@ -1084,7 +1234,7 @@ const createProjectCapacityPool = withRole<{ id: string }>(Role.ADMIN, async (re
   );
 
   const [project] = await db
-    .select({ id: projects.id })
+    .select({ id: projects.id, title: projects.title })
     .from(projects)
     .where(eq(projects.id, id))
     .limit(1);
@@ -1095,12 +1245,23 @@ const createProjectCapacityPool = withRole<{ id: string }>(Role.ADMIN, async (re
     .values({ projectId: id, name: body.name, maxParticipants: body.maxParticipants })
     .returning();
 
+  if (pool) {
+    await recordAudit(user, {
+      action: AuditAction.CREATE,
+      entityType: AuditEntityType.CAPACITY_POOL,
+      entityId: pool.id,
+      entityLabel: pool.name,
+      changes: createdChanges({ ...pool, projectId: undefined }),
+      metadata: { projectId: id, projectTitle: project.title },
+    });
+  }
+
   return Response.json(pool, { status: 201 });
 });
 
 const updateProjectCapacityPool = withRole<{ id: string; poolId: string }>(
   Role.ADMIN,
-  async (req) => {
+  async (req, user) => {
     const { poolId, id } = req.params;
     const body = await parseBody(
       req,
@@ -1114,6 +1275,12 @@ const updateProjectCapacityPool = withRole<{ id: string; poolId: string }>(
         })
     );
 
+    const [before] = await db
+      .select()
+      .from(projectCapacityPools)
+      .where(and(eq(projectCapacityPools.id, poolId), eq(projectCapacityPools.projectId, id)))
+      .limit(1);
+
     const [updated] = await db
       .update(projectCapacityPools)
       .set({
@@ -1124,21 +1291,43 @@ const updateProjectCapacityPool = withRole<{ id: string; poolId: string }>(
       .returning();
 
     if (!updated) return Response.json({ error: "Capacity pool not found" }, { status: 404 });
+
+    const changes = diffChanges(before ?? {}, updated);
+    if (changes) {
+      await recordAudit(user, {
+        action: AuditAction.UPDATE,
+        entityType: AuditEntityType.CAPACITY_POOL,
+        entityId: updated.id,
+        entityLabel: updated.name,
+        changes,
+        metadata: await projectMetadata(id),
+      });
+    }
+
     return Response.json(updated);
   }
 );
 
 const deleteProjectCapacityPool = withRole<{ id: string; poolId: string }>(
   Role.ADMIN,
-  async (req) => {
+  async (req, user) => {
     const { poolId, id } = req.params;
 
     const [deleted] = await db
       .delete(projectCapacityPools)
       .where(and(eq(projectCapacityPools.id, poolId), eq(projectCapacityPools.projectId, id)))
-      .returning({ id: projectCapacityPools.id });
+      .returning();
 
     if (!deleted) return Response.json({ error: "Capacity pool not found" }, { status: 404 });
+
+    await recordAudit(user, {
+      action: AuditAction.DELETE,
+      entityType: AuditEntityType.CAPACITY_POOL,
+      entityId: deleted.id,
+      entityLabel: deleted.name,
+      changes: deletedChanges({ ...deleted, projectId: undefined }),
+      metadata: await projectMetadata(id),
+    });
     return Response.json({ success: true });
   }
 );

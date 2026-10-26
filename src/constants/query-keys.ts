@@ -1,3 +1,5 @@
+import type { AuditLogQuery } from "@/constants/schemas";
+
 export const queryKeys = {
   organization: () => ["organization"] as const,
   me: () => ["me"] as const,
@@ -19,6 +21,8 @@ export const queryKeys = {
     pillars: () => ["admin", "pillars"] as const,
     organization: () => ["admin", "organization"] as const,
     dashboard: () => ["admin", "dashboard"] as const,
+    auditLogs: (query: AuditLogQuery) => ["admin", "audit-logs", query] as const,
+    auditLogActors: () => ["admin", "audit-logs", "actors"] as const,
     projectRegistrations: (projectId: string) =>
       ["admin", "projects", projectId, "registrations"] as const,
     projectPackages: (projectId: string) => ["admin", "projects", projectId, "packages"] as const,

@@ -25,6 +25,7 @@ Originally built for **EMSA Macedonia** (European Medical Students' Association)
 - **Members** — email/password and Google OAuth login, profiles with avatars, admin-defined custom profile fields with a completion gate
 - **Projects** — registration windows, participant caps, self-service sign-up, attendance tracking
 - **Roles** — `USER` → `ADMIN` → `SUPER_ADMIN`, enforced server-side; the first registered account becomes the instance owner
+- **Audit log** — every admin change to projects, workshops, users, memberships, pillars, organization settings, positions, supporters, and member fields is recorded with who, when, and a before/after diff, browsable and filterable by super admins
 - **Rebrandable** — organization name, logo, tagline, socials, and even the "pillars" label (call them committees, departments, chapters, ...) are editable at runtime
 - **Self-contained** — a single Bun process serves both the API and the React SPA; images upload straight to any S3-compatible storage via presigned URLs
 

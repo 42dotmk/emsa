@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne } from "drizzle-orm";
 
-import { Role } from "@/constants/enums";
+import { AuditAction, AuditEntityType, Role } from "@/constants/enums";
 import { ApiRoutes } from "@/constants/routes";
 import {
   bulkImportSchema,
@@ -19,6 +19,13 @@ import {
   userActivations,
   users,
 } from "@/db/schema";
+import {
+  createdChanges,
+  deletedChanges,
+  diffChanges,
+  lookupUserName,
+  recordAudit,
+} from "@/lib/audit";
 import { db } from "@/lib/db";
 import { sendBulkWelcomeEmails } from "@/lib/email";
 import { createUserToken } from "@/lib/jwt";
@@ -214,9 +221,15 @@ const getUsers = withRole(Role.ADMIN, async () => {
   );
 });
 
-const updateUser = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const updateUser = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
   const data = await parseBody(req, updateUserSchema);
+
+  const [before] = await db
+    .select({ role: users.role, isAlumni: users.isAlumni })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
 
   if (data.role && data.role !== Role.SUPER_ADMIN) {
     const [target] = await db
@@ -247,6 +260,18 @@ const updateUser = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
 
   if (!updated) {
     return Response.json({ error: "User not found" }, { status: 404 });
+  }
+
+  const changes = diffChanges(before ?? {}, { role: updated.role, isAlumni: updated.isAlumni });
+  if (changes) {
+    await recordAudit(user, {
+      action: AuditAction.UPDATE,
+      entityType: AuditEntityType.USER,
+      entityId: updated.id,
+      entityLabel: updated.name,
+      changes,
+      metadata: { email: updated.email },
+    });
   }
 
   const today = todayStr();
@@ -299,10 +324,7 @@ const deleteUser = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) 
 
   let deleted;
   try {
-    [deleted] = await db
-      .delete(users)
-      .where(eq(users.id, id))
-      .returning({ id: users.id, imageUrl: users.imageUrl });
+    [deleted] = await db.delete(users).where(eq(users.id, id)).returning(adminUserColumns);
   } catch (err) {
     if ((err as { code?: string }).code === "23503") {
       throw new HttpError(422, "User is still referenced by other records");
@@ -313,6 +335,14 @@ const deleteUser = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) 
   if (!deleted) {
     return Response.json({ error: "User not found" }, { status: 404 });
   }
+
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.USER,
+    entityId: deleted.id,
+    entityLabel: deleted.name,
+    changes: deletedChanges(deleted),
+  });
 
   if (deleted.imageUrl) {
     deleteObject(deleted.imageUrl).catch(console.error);
@@ -347,7 +377,7 @@ async function checkOverlap(
   return !!overlap;
 }
 
-const createActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const createActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id: userId } = req.params;
   const data = await parseBody(req, createActivationSchema);
 
@@ -361,10 +391,21 @@ const createActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) 
     .values({ userId, startDate: data.startDate, endDate: data.endDate })
     .returning();
 
+  if (activation) {
+    await recordAudit(user, {
+      action: AuditAction.CREATE,
+      entityType: AuditEntityType.ACTIVATION,
+      entityId: activation.id,
+      entityLabel: (await lookupUserName(userId)) ?? userId,
+      changes: createdChanges({ startDate: activation.startDate, endDate: activation.endDate }),
+      metadata: { userId },
+    });
+  }
+
   return Response.json(activation, { status: 201 });
 });
 
-const updateActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const updateActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id: activationId } = req.params;
   const data = await parseBody(req, updateActivationSchema);
 
@@ -396,25 +437,46 @@ const updateActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) 
     .where(eq(userActivations.id, activationId))
     .returning();
 
+  const changes = updated ? diffChanges(existing, updated) : null;
+  if (changes) {
+    await recordAudit(user, {
+      action: AuditAction.UPDATE,
+      entityType: AuditEntityType.ACTIVATION,
+      entityId: activationId,
+      entityLabel: (await lookupUserName(existing.userId)) ?? existing.userId,
+      changes,
+      metadata: { userId: existing.userId },
+    });
+  }
+
   return Response.json(updated);
 });
 
-const deleteActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const deleteActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id: activationId } = req.params;
 
   const [deleted] = await db
     .delete(userActivations)
     .where(eq(userActivations.id, activationId))
-    .returning({ id: userActivations.id });
+    .returning();
 
   if (!deleted) {
     return Response.json({ error: "Activation not found" }, { status: 404 });
   }
 
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.ACTIVATION,
+    entityId: deleted.id,
+    entityLabel: (await lookupUserName(deleted.userId)) ?? deleted.userId,
+    changes: deletedChanges({ startDate: deleted.startDate, endDate: deleted.endDate }),
+    metadata: { userId: deleted.userId },
+  });
+
   return Response.json({ id: deleted.id });
 });
 
-const bulkImportUsers = withRole(Role.SUPER_ADMIN, async (req) => {
+const bulkImportUsers = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const data = await parseBody(req, bulkImportSchema);
 
   const defs = await getFieldDefinitions();
@@ -462,11 +524,11 @@ const bulkImportUsers = withRole(Role.SUPER_ADMIN, async (req) => {
       .returning();
 
     const toCreateByEmail = new Map(toCreate.map((u) => [u.email, u]));
-    const activationRows = inserted.flatMap((user) => {
-      const src = toCreateByEmail.get(user.email);
+    const activationRows = inserted.flatMap((row) => {
+      const src = toCreateByEmail.get(row.email);
       if (!src?.activationStartDate || !src?.activationEndDate) return [];
       return [
-        { userId: user.id, startDate: src.activationStartDate, endDate: src.activationEndDate },
+        { userId: row.id, startDate: src.activationStartDate, endDate: src.activationEndDate },
       ];
     });
 
@@ -477,6 +539,18 @@ const bulkImportUsers = withRole(Role.SUPER_ADMIN, async (req) => {
     return inserted;
   });
 
+  await recordAudit(user, {
+    action: AuditAction.IMPORT,
+    entityType: AuditEntityType.USER,
+    entityLabel: `${created.length} ${created.length === 1 ? "user" : "users"}`,
+    metadata: {
+      created: created.length,
+      skipped: skipped.length,
+      welcomeEmails: data.sendWelcomeEmails,
+      emails: created.map((u) => u.email),
+    },
+  });
+
   if (data.sendWelcomeEmails) {
     await sendBulkWelcomeEmails(created.map((u) => ({ email: u.email, name: u.name })));
   }
@@ -484,7 +558,7 @@ const bulkImportUsers = withRole(Role.SUPER_ADMIN, async (req) => {
   return Response.json({ created: created.length, skipped }, { status: 201 });
 });
 
-const resendWelcomeEmails = withRole(Role.SUPER_ADMIN, async (req) => {
+const resendWelcomeEmails = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const data = await parseBody(req, resendWelcomeEmailsSchema);
 
   const recipients = await db
@@ -497,6 +571,13 @@ const resendWelcomeEmails = withRole(Role.SUPER_ADMIN, async (req) => {
   }
 
   await sendBulkWelcomeEmails(recipients.map((u) => ({ email: u.email, name: u.name })));
+
+  await recordAudit(user, {
+    action: AuditAction.SEND_EMAIL,
+    entityType: AuditEntityType.USER,
+    entityLabel: `Welcome email to ${recipients.length} ${recipients.length === 1 ? "user" : "users"}`,
+    metadata: { count: recipients.length, emails: recipients.map((u) => u.email) },
+  });
 
   return Response.json({ sent: recipients.length });
 });

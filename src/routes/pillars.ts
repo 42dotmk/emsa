@@ -1,9 +1,17 @@
 import { eq, inArray } from "drizzle-orm";
 
-import { Role } from "@/constants/enums";
+import { AuditAction, AuditEntityType, Role } from "@/constants/enums";
 import { ApiRoutes } from "@/constants/routes";
 import { pillarSchema, updatePillarSchema } from "@/constants/schemas";
 import { pillars, projectImages, projects, users } from "@/db/schema";
+import {
+  createdChanges,
+  deletedChanges,
+  diffChanges,
+  lookupUserName,
+  recordAudit,
+  relabelReference,
+} from "@/lib/audit";
 import { db } from "@/lib/db";
 import { type BunRequest, parseBody, withRole } from "@/lib/middleware";
 import { deleteObject, getPresignedUploadUrl, validateImageContentType } from "@/lib/s3";
@@ -107,7 +115,7 @@ const getPillarsAdmin = withRole(Role.SUPER_ADMIN, async () => {
   return Response.json(rows);
 });
 
-const createPillar = withRole(Role.SUPER_ADMIN, async (req) => {
+const createPillar = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const data = await parseBody(req, pillarSchema);
 
   const [pillar] = await db.insert(pillars).values(data).returning();
@@ -115,10 +123,23 @@ const createPillar = withRole(Role.SUPER_ADMIN, async (req) => {
     return Response.json({ error: "Failed to create" }, { status: 500 });
   }
 
+  await recordAudit(user, {
+    action: AuditAction.CREATE,
+    entityType: AuditEntityType.PILLAR,
+    entityId: pillar.id,
+    entityLabel: pillar.name,
+    changes: await relabelReference(
+      createdChanges(pillar),
+      "directorId",
+      "director",
+      lookupUserName
+    ),
+  });
+
   return Response.json(pillar, { status: 201 });
 });
 
-const updatePillar = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const updatePillar = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
   const data = await parseBody(req, updatePillarSchema);
 
@@ -138,20 +159,41 @@ const updatePillar = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
     deleteObject(existing.imageUrl).catch(console.error);
   }
 
+  const changes = diffChanges(existing ?? {}, updated);
+  if (changes) {
+    await recordAudit(user, {
+      action: AuditAction.UPDATE,
+      entityType: AuditEntityType.PILLAR,
+      entityId: updated.id,
+      entityLabel: updated.name,
+      changes: await relabelReference(changes, "directorId", "director", lookupUserName),
+    });
+  }
+
   return Response.json(updated);
 });
 
-const deletePillar = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const deletePillar = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
 
-  const [deleted] = await db
-    .delete(pillars)
-    .where(eq(pillars.id, id))
-    .returning({ id: pillars.id });
+  const [deleted] = await db.delete(pillars).where(eq(pillars.id, id)).returning();
 
   if (!deleted) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
+
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.PILLAR,
+    entityId: deleted.id,
+    entityLabel: deleted.name,
+    changes: await relabelReference(
+      deletedChanges(deleted),
+      "directorId",
+      "director",
+      lookupUserName
+    ),
+  });
 
   return Response.json({ success: true });
 });

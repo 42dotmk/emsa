@@ -1,4 +1,4 @@
-import type { MemberFieldType, Role } from "@/constants/enums";
+import type { AuditAction, AuditEntityType, MemberFieldType, Role } from "@/constants/enums";
 
 export type ImageEntry =
   | { type: "none" }
@@ -279,4 +279,35 @@ export interface GalleryResponse {
 export interface CsvColumn<T> {
   header: string;
   value: (row: T) => string;
+}
+
+export type AuditValue = string | number | boolean | null;
+
+export type AuditChanges = Record<string, { from: AuditValue; to: AuditValue }>;
+
+export type AuditMetadata = Record<string, AuditValue | string[]>;
+
+export interface AuditLogEntry {
+  id: string;
+  actorId: string | null;
+  actorName: string;
+  actorEmail: string;
+  actorImageUrl: string | null;
+  action: AuditAction;
+  entityType: AuditEntityType;
+  entityId: string | null;
+  entityLabel: string;
+  changes: AuditChanges | null;
+  metadata: AuditMetadata | null;
+  createdAt: string;
+}
+
+export interface AuditLogPage {
+  items: AuditLogEntry[];
+  total: number;
+}
+
+export interface AuditActor {
+  id: string;
+  name: string;
 }
