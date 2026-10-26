@@ -116,6 +116,9 @@ const AdminProjectDetailPage = lazy(() =>
 const OrganizationPage = lazy(() =>
   import("@/pages/admin/OrganizationPage").then((m) => ({ default: m.OrganizationPage }))
 );
+const AuditLogPage = lazy(() =>
+  import("@/pages/admin/AuditLogPage").then((m) => ({ default: m.AuditLogPage }))
+);
 
 export default function App() {
   return (
@@ -197,6 +200,14 @@ export default function App() {
                         element={
                           <ProtectedRoute requiredRole={Role.SUPER_ADMIN}>
                             <OrganizationPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path={PageRoutes.ADMIN_AUDIT_LOG_SEGMENT}
+                        element={
+                          <ProtectedRoute requiredRole={Role.SUPER_ADMIN}>
+                            <AuditLogPage />
                           </ProtectedRoute>
                         }
                       />

@@ -1,9 +1,10 @@
 import { eq } from "drizzle-orm";
 
-import { Role } from "@/constants/enums";
+import { AuditAction, AuditEntityType, Role } from "@/constants/enums";
 import { ApiRoutes } from "@/constants/routes";
 import { updateOrganizationSchema } from "@/constants/schemas";
 import { organization } from "@/db/schema";
+import { diffChanges, recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { parseBody, withRole } from "@/lib/middleware";
 import { deleteObject, getPresignedUploadUrl, validateImageContentType } from "@/lib/s3";
@@ -39,7 +40,7 @@ const getOrganizationAdmin = withRole(Role.SUPER_ADMIN, async () => {
   return Response.json(org ?? null);
 });
 
-const updateOrganization = withRole(Role.SUPER_ADMIN, async (req) => {
+const updateOrganization = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const data = await parseBody(req, updateOrganizationSchema);
 
   const [existing] = await db
@@ -59,6 +60,19 @@ const updateOrganization = withRole(Role.SUPER_ADMIN, async (req) => {
 
   if (existing?.logoUrl && data.logoUrl !== undefined && data.logoUrl !== existing.logoUrl) {
     deleteObject(existing.logoUrl).catch(console.error);
+  }
+
+  if (updated) {
+    const changes = diffChanges(existing ?? {}, updated);
+    if (changes) {
+      await recordAudit(user, {
+        action: existing ? AuditAction.UPDATE : AuditAction.CREATE,
+        entityType: AuditEntityType.ORGANIZATION,
+        entityId: ORG_ID,
+        entityLabel: updated.name || "Organization",
+        changes,
+      });
+    }
   }
 
   return Response.json(updated);

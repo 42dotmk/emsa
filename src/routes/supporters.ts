@@ -1,9 +1,10 @@
 import { asc, desc, eq } from "drizzle-orm";
 
-import { Role } from "@/constants/enums";
+import { AuditAction, AuditEntityType, Role } from "@/constants/enums";
 import { ApiRoutes } from "@/constants/routes";
 import { supporterReorderSchema, supporterSchema } from "@/constants/schemas";
 import { supporters } from "@/db/schema";
+import { createdChanges, deletedChanges, diffChanges, recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { parseBody, withRole } from "@/lib/middleware";
 import { deleteObject, getPresignedUploadUrl, validateImageContentType } from "@/lib/s3";
@@ -23,7 +24,7 @@ const listSupporters = async () => {
   return Response.json(rows);
 };
 
-const createSupporter = withRole(Role.SUPER_ADMIN, async (req) => {
+const createSupporter = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const data = await parseBody(req, supporterSchema);
 
   const [last] = await db
@@ -42,15 +43,23 @@ const createSupporter = withRole(Role.SUPER_ADMIN, async (req) => {
     return Response.json({ error: "Failed to create supporter" }, { status: 500 });
   }
 
+  await recordAudit(user, {
+    action: AuditAction.CREATE,
+    entityType: AuditEntityType.SUPPORTER,
+    entityId: created.id,
+    entityLabel: created.name,
+    changes: createdChanges(created),
+  });
+
   return Response.json(created, { status: 201 });
 });
 
-const updateSupporter = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const updateSupporter = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
   const data = await parseBody(req, supporterSchema);
 
   const [existing] = await db
-    .select({ logoUrl: supporters.logoUrl })
+    .select(supporterColumns)
     .from(supporters)
     .where(eq(supporters.id, id))
     .limit(1);
@@ -69,27 +78,46 @@ const updateSupporter = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) =
     deleteObject(existing.logoUrl).catch(console.error);
   }
 
+  const changes = diffChanges(existing ?? {}, updated);
+  if (changes) {
+    await recordAudit(user, {
+      action: AuditAction.UPDATE,
+      entityType: AuditEntityType.SUPPORTER,
+      entityId: updated.id,
+      entityLabel: updated.name,
+      changes,
+    });
+  }
+
   return Response.json(updated);
 });
 
-const deleteSupporter = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const deleteSupporter = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
 
   const [deleted] = await db
     .delete(supporters)
     .where(eq(supporters.id, id))
-    .returning({ id: supporters.id, logoUrl: supporters.logoUrl });
+    .returning(supporterColumns);
 
   if (!deleted) {
     return Response.json({ error: "Supporter not found" }, { status: 404 });
   }
+
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.SUPPORTER,
+    entityId: deleted.id,
+    entityLabel: deleted.name,
+    changes: deletedChanges(deleted),
+  });
 
   deleteObject(deleted.logoUrl).catch(console.error);
 
   return Response.json({ id: deleted.id });
 });
 
-const reorderSupporters = withRole(Role.SUPER_ADMIN, async (req) => {
+const reorderSupporters = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const { ids } = await parseBody(req, supporterReorderSchema);
 
   await db.transaction(async (tx) => {
@@ -101,6 +129,13 @@ const reorderSupporters = withRole(Role.SUPER_ADMIN, async (req) => {
           .where(eq(supporters.id, id))
       )
     );
+  });
+
+  await recordAudit(user, {
+    action: AuditAction.REORDER,
+    entityType: AuditEntityType.SUPPORTER,
+    entityLabel: "Supporters",
+    metadata: { count: ids.length },
   });
 
   return Response.json({ success: true });

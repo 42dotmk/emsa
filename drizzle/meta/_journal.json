@@ -267,6 +267,13 @@
       "when": 1787045988571,
       "tag": "0037_add_supporters",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793048359763,
+      "tag": "0038_add_audit_logs",
+      "breakpoints": true
     }
   ]
 }

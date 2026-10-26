@@ -5,6 +5,7 @@ import { twMerge } from "tailwind-merge";
 import { Role } from "@/constants/enums";
 import { PageRoutes } from "@/constants/routes";
 import {
+  type AuditValue,
   type CsvColumn,
   type ImageEntry,
   type PublicProject,
@@ -204,4 +205,20 @@ export function exportToCsv<T>(rows: T[], columns: CsvColumn<T>[], filename: str
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export function humanizeFieldName(path: string): string {
+  const field = path.split(".").pop() ?? path;
+  const words = field
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+export function formatAuditValue(value: AuditValue): string {
+  if (value === null || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) return formatDateTime(value);
+  return String(value);
 }

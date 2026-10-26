@@ -14,21 +14,26 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { MemberFieldType, Role } from "@/constants/enums";
+import { type AuditAction, type AuditEntityType, MemberFieldType, Role } from "@/constants/enums";
+import type { AuditChanges, AuditMetadata } from "@/constants/types";
 
-const jsonbObject = customType<{ data: Record<string, string | number> }>({
-  dataType() {
-    return "jsonb";
-  },
-  toDriver(value) {
-    return value;
-  },
-  fromDriver(value) {
-    return typeof value === "string"
-      ? JSON.parse(value)
-      : (value as Record<string, string | number>);
-  },
-});
+function jsonbOf<T>() {
+  return customType<{ data: T }>({
+    dataType() {
+      return "jsonb";
+    },
+    toDriver(value) {
+      return value;
+    },
+    fromDriver(value) {
+      return typeof value === "string" ? JSON.parse(value) : (value as T);
+    },
+  });
+}
+
+const jsonbObject = jsonbOf<Record<string, string | number>>();
+const jsonbAuditChanges = jsonbOf<AuditChanges>();
+const jsonbAuditMetadata = jsonbOf<AuditMetadata>();
 
 export const roleEnum = pgEnum("role", [Role.USER, Role.ADMIN, Role.SUPER_ADMIN]);
 
@@ -336,3 +341,25 @@ export const supporters = pgTable("supporters", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    actorName: varchar("actor_name", { length: 255 }).notNull(),
+    actorEmail: varchar("actor_email", { length: 255 }).notNull(),
+    action: varchar("action", { length: 32 }).$type<AuditAction>().notNull(),
+    entityType: varchar("entity_type", { length: 32 }).$type<AuditEntityType>().notNull(),
+    entityId: varchar("entity_id", { length: 64 }),
+    entityLabel: varchar("entity_label", { length: 500 }).notNull(),
+    changes: jsonbAuditChanges("changes"),
+    metadata: jsonbAuditMetadata("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("audit_logs_created_at_idx").on(table.createdAt.desc()),
+    index("audit_logs_entity_idx").on(table.entityType, table.entityId),
+    index("audit_logs_actor_id_idx").on(table.actorId),
+  ]
+);

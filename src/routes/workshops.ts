@@ -1,7 +1,7 @@
 import { and, count, eq, gt, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { Role } from "@/constants/enums";
+import { AuditAction, AuditEntityType, Role } from "@/constants/enums";
 import { ApiRoutes } from "@/constants/routes";
 import { updateWorkshopSchema, workshopSchema } from "@/constants/schemas";
 import {
@@ -11,8 +11,25 @@ import {
   workshopRegistrations,
   workshops,
 } from "@/db/schema";
+import {
+  createdChanges,
+  deletedChanges,
+  diffChanges,
+  lookupProjectTitle,
+  lookupUserName,
+  recordAudit,
+} from "@/lib/audit";
 import { db } from "@/lib/db";
 import { type BunRequest, getAuthUser, HttpError, parseBody, withRole } from "@/lib/middleware";
+
+async function workshopMetadata(workshop: { id: string; title: string; projectId: string }) {
+  return {
+    workshopId: workshop.id,
+    workshopTitle: workshop.title,
+    projectId: workshop.projectId,
+    projectTitle: (await lookupProjectTitle(workshop.projectId)) ?? null,
+  };
+}
 
 async function buildWorkshopResponse(
   rows: (typeof workshops.$inferSelect)[],
@@ -245,11 +262,11 @@ const getAdminProjectWorkshops = withRole<{ id: string }>(Role.ADMIN, async (req
 });
 
 // Admin: create workshop
-const createWorkshop = withRole<{ id: string }>(Role.ADMIN, async (req) => {
+const createWorkshop = withRole<{ id: string }>(Role.ADMIN, async (req, user) => {
   const { id } = req.params;
 
   const [project] = await db
-    .select({ id: projects.id })
+    .select({ id: projects.id, title: projects.title })
     .from(projects)
     .where(eq(projects.id, id))
     .limit(1);
@@ -271,14 +288,27 @@ const createWorkshop = withRole<{ id: string }>(Role.ADMIN, async (req) => {
     })
     .returning();
 
+  if (workshop) {
+    await recordAudit(user, {
+      action: AuditAction.CREATE,
+      entityType: AuditEntityType.WORKSHOP,
+      entityId: workshop.id,
+      entityLabel: workshop.title,
+      changes: createdChanges({ ...workshop, projectId: undefined }),
+      metadata: { projectId: id, projectTitle: project.title },
+    });
+  }
+
   return Response.json(workshop, { status: 201 });
 });
 
 // Admin: update workshop
-const updateWorkshop = withRole<{ workshopId: string }>(Role.ADMIN, async (req) => {
+const updateWorkshop = withRole<{ workshopId: string }>(Role.ADMIN, async (req, user) => {
   const { workshopId } = req.params;
   const { startingAt, endingAt, registrationOpensAt, registrationClosesAt, description, ...rest } =
     await parseBody(req, updateWorkshopSchema);
+
+  const [before] = await db.select().from(workshops).where(eq(workshops.id, workshopId)).limit(1);
 
   const [updated] = await db
     .update(workshops)
@@ -299,19 +329,44 @@ const updateWorkshop = withRole<{ workshopId: string }>(Role.ADMIN, async (req) 
     .returning();
 
   if (!updated) return Response.json({ error: "Workshop not found" }, { status: 404 });
+
+  const changes = diffChanges(before ?? {}, updated);
+  if (changes) {
+    await recordAudit(user, {
+      action: AuditAction.UPDATE,
+      entityType: AuditEntityType.WORKSHOP,
+      entityId: updated.id,
+      entityLabel: updated.title,
+      changes,
+      metadata: {
+        projectId: updated.projectId,
+        projectTitle: (await lookupProjectTitle(updated.projectId)) ?? null,
+      },
+    });
+  }
+
   return Response.json(updated);
 });
 
 // Admin: delete workshop (cascade deletes registrations via FK)
-const deleteWorkshop = withRole<{ workshopId: string }>(Role.ADMIN, async (req) => {
+const deleteWorkshop = withRole<{ workshopId: string }>(Role.ADMIN, async (req, user) => {
   const { workshopId } = req.params;
 
-  const [deleted] = await db
-    .delete(workshops)
-    .where(eq(workshops.id, workshopId))
-    .returning({ id: workshops.id });
+  const [deleted] = await db.delete(workshops).where(eq(workshops.id, workshopId)).returning();
 
   if (!deleted) return Response.json({ error: "Workshop not found" }, { status: 404 });
+
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.WORKSHOP,
+    entityId: deleted.id,
+    entityLabel: deleted.title,
+    changes: deletedChanges({ ...deleted, projectId: undefined }),
+    metadata: {
+      projectId: deleted.projectId,
+      projectTitle: (await lookupProjectTitle(deleted.projectId)) ?? null,
+    },
+  });
   return Response.json({ success: true });
 });
 
@@ -338,58 +393,71 @@ const getWorkshopRegistrations = withRole<{ workshopId: string }>(Role.ADMIN, as
 });
 
 // Admin: add participant to a workshop (SUPER_ADMIN)
-const addWorkshopRegistration = withRole<{ workshopId: string }>(Role.SUPER_ADMIN, async (req) => {
-  const { workshopId } = req.params;
-  const body = await parseBody(req, z.object({ userId: z.uuid() }));
+const addWorkshopRegistration = withRole<{ workshopId: string }>(
+  Role.SUPER_ADMIN,
+  async (req, user) => {
+    const { workshopId } = req.params;
+    const body = await parseBody(req, z.object({ userId: z.uuid() }));
 
-  const [workshop] = await db
-    .select({ id: workshops.id, projectId: workshops.projectId })
-    .from(workshops)
-    .where(eq(workshops.id, workshopId))
-    .limit(1);
+    const [workshop] = await db
+      .select({ id: workshops.id, title: workshops.title, projectId: workshops.projectId })
+      .from(workshops)
+      .where(eq(workshops.id, workshopId))
+      .limit(1);
 
-  if (!workshop) return Response.json({ error: "Workshop not found" }, { status: 404 });
+    if (!workshop) return Response.json({ error: "Workshop not found" }, { status: 404 });
 
-  const [projectReg] = await db
-    .select({ id: projectRegistrations.id })
-    .from(projectRegistrations)
-    .where(
-      and(
-        eq(projectRegistrations.projectId, workshop.projectId),
-        eq(projectRegistrations.userId, body.userId)
+    const [projectReg] = await db
+      .select({ id: projectRegistrations.id })
+      .from(projectRegistrations)
+      .where(
+        and(
+          eq(projectRegistrations.projectId, workshop.projectId),
+          eq(projectRegistrations.userId, body.userId)
+        )
       )
-    )
-    .limit(1);
+      .limit(1);
 
-  if (!projectReg) {
-    return Response.json({ error: "User is not registered for this project" }, { status: 422 });
+    if (!projectReg) {
+      return Response.json({ error: "User is not registered for this project" }, { status: 422 });
+    }
+
+    const [existing] = await db
+      .select({ id: workshopRegistrations.id })
+      .from(workshopRegistrations)
+      .where(
+        and(
+          eq(workshopRegistrations.workshopId, workshopId),
+          eq(workshopRegistrations.userId, body.userId)
+        )
+      )
+      .limit(1);
+
+    if (existing) return Response.json({ error: "User already registered" }, { status: 409 });
+
+    const [registration] = await db
+      .insert(workshopRegistrations)
+      .values({ workshopId, userId: body.userId })
+      .returning();
+
+    if (registration) {
+      await recordAudit(user, {
+        action: AuditAction.CREATE,
+        entityType: AuditEntityType.REGISTRATION,
+        entityId: registration.id,
+        entityLabel: (await lookupUserName(body.userId)) ?? body.userId,
+        metadata: { ...(await workshopMetadata(workshop)), userId: body.userId },
+      });
+    }
+
+    return Response.json(registration, { status: 201 });
   }
-
-  const [existing] = await db
-    .select({ id: workshopRegistrations.id })
-    .from(workshopRegistrations)
-    .where(
-      and(
-        eq(workshopRegistrations.workshopId, workshopId),
-        eq(workshopRegistrations.userId, body.userId)
-      )
-    )
-    .limit(1);
-
-  if (existing) return Response.json({ error: "User already registered" }, { status: 409 });
-
-  const [registration] = await db
-    .insert(workshopRegistrations)
-    .values({ workshopId, userId: body.userId })
-    .returning();
-
-  return Response.json(registration, { status: 201 });
-});
+);
 
 // Admin: remove a workshop registration (SUPER_ADMIN)
 const deleteWorkshopRegistration = withRole<{ workshopId: string; userId: string }>(
   Role.SUPER_ADMIN,
-  async (req) => {
+  async (req, user) => {
     const { workshopId, userId } = req.params;
 
     const [deleted] = await db
@@ -403,6 +471,21 @@ const deleteWorkshopRegistration = withRole<{ workshopId: string; userId: string
       .returning({ id: workshopRegistrations.id });
 
     if (!deleted) return Response.json({ error: "Registration not found" }, { status: 404 });
+
+    const [workshop] = await db
+      .select({ id: workshops.id, title: workshops.title, projectId: workshops.projectId })
+      .from(workshops)
+      .where(eq(workshops.id, workshopId))
+      .limit(1);
+
+    await recordAudit(user, {
+      action: AuditAction.DELETE,
+      entityType: AuditEntityType.REGISTRATION,
+      entityId: deleted.id,
+      entityLabel: (await lookupUserName(userId)) ?? userId,
+      metadata: { ...(workshop ? await workshopMetadata(workshop) : { workshopId }), userId },
+    });
+
     return Response.json({ success: true });
   }
 );

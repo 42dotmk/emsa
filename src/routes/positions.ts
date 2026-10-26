@@ -1,9 +1,17 @@
 import { asc, desc, eq } from "drizzle-orm";
 
-import { Role } from "@/constants/enums";
+import { AuditAction, AuditEntityType, Role } from "@/constants/enums";
 import { ApiRoutes } from "@/constants/routes";
 import { positionReorderSchema, positionSchema } from "@/constants/schemas";
 import { positions, users } from "@/db/schema";
+import {
+  createdChanges,
+  deletedChanges,
+  diffChanges,
+  lookupUserName,
+  recordAudit,
+  relabelReference,
+} from "@/lib/audit";
 import { db } from "@/lib/db";
 import { parseBody, withRole } from "@/lib/middleware";
 
@@ -33,7 +41,7 @@ const listPositions = async () => {
   return Response.json(rows);
 };
 
-const createPosition = withRole(Role.SUPER_ADMIN, async (req) => {
+const createPosition = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const data = await parseBody(req, positionSchema);
 
   const [last] = await db
@@ -52,21 +60,35 @@ const createPosition = withRole(Role.SUPER_ADMIN, async (req) => {
     return Response.json({ error: "Failed to create position" }, { status: 500 });
   }
 
-  const [user] = await db
+  const [holder] = await db
     .select({ name: users.name, imageUrl: users.imageUrl })
     .from(users)
     .where(eq(users.id, created.userId))
     .limit(1);
 
+  await recordAudit(user, {
+    action: AuditAction.CREATE,
+    entityType: AuditEntityType.POSITION,
+    entityId: created.id,
+    entityLabel: created.title,
+    changes: await relabelReference(createdChanges(created), "userId", "holder", lookupUserName),
+  });
+
   return Response.json(
-    { ...created, userName: user?.name ?? null, userImageUrl: user?.imageUrl ?? null },
+    { ...created, userName: holder?.name ?? null, userImageUrl: holder?.imageUrl ?? null },
     { status: 201 }
   );
 });
 
-const updatePosition = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const updatePosition = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
   const data = await parseBody(req, positionSchema);
+
+  const [existing] = await db
+    .select(positionColumns)
+    .from(positions)
+    .where(eq(positions.id, id))
+    .limit(1);
 
   const [updated] = await db
     .update(positions)
@@ -78,35 +100,54 @@ const updatePosition = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) =>
     return Response.json({ error: "Position not found" }, { status: 404 });
   }
 
-  const [user] = await db
+  const [holder] = await db
     .select({ name: users.name, imageUrl: users.imageUrl })
     .from(users)
     .where(eq(users.id, updated.userId))
     .limit(1);
 
+  const changes = diffChanges(existing ?? {}, updated);
+  if (changes) {
+    await recordAudit(user, {
+      action: AuditAction.UPDATE,
+      entityType: AuditEntityType.POSITION,
+      entityId: updated.id,
+      entityLabel: updated.title,
+      changes: await relabelReference(changes, "userId", "holder", lookupUserName),
+    });
+  }
+
   return Response.json({
     ...updated,
-    userName: user?.name ?? null,
-    userImageUrl: user?.imageUrl ?? null,
+    userName: holder?.name ?? null,
+    userImageUrl: holder?.imageUrl ?? null,
   });
 });
 
-const deletePosition = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const deletePosition = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
 
   const [deleted] = await db
     .delete(positions)
     .where(eq(positions.id, id))
-    .returning({ id: positions.id });
+    .returning(positionColumns);
 
   if (!deleted) {
     return Response.json({ error: "Position not found" }, { status: 404 });
   }
 
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.POSITION,
+    entityId: deleted.id,
+    entityLabel: deleted.title,
+    changes: await relabelReference(deletedChanges(deleted), "userId", "holder", lookupUserName),
+  });
+
   return Response.json({ id: deleted.id });
 });
 
-const reorderPositions = withRole(Role.SUPER_ADMIN, async (req) => {
+const reorderPositions = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const { ids } = await parseBody(req, positionReorderSchema);
 
   await db.transaction(async (tx) => {
@@ -118,6 +159,13 @@ const reorderPositions = withRole(Role.SUPER_ADMIN, async (req) => {
           .where(eq(positions.id, id))
       )
     );
+  });
+
+  await recordAudit(user, {
+    action: AuditAction.REORDER,
+    entityType: AuditEntityType.POSITION,
+    entityLabel: "Board positions",
+    metadata: { count: ids.length },
   });
 
   return Response.json({ success: true });

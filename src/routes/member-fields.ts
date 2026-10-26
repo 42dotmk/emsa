@@ -1,6 +1,6 @@
 import { asc, desc, eq, sql } from "drizzle-orm";
 
-import { Role } from "@/constants/enums";
+import { AuditAction, AuditEntityType, Role } from "@/constants/enums";
 import { ApiRoutes } from "@/constants/routes";
 import {
   memberFieldReorderSchema,
@@ -8,6 +8,7 @@ import {
   updateMemberFieldSchema,
 } from "@/constants/schemas";
 import { memberFieldDefinitions, users } from "@/db/schema";
+import { createdChanges, deletedChanges, diffChanges, recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { parseBody, withRole } from "@/lib/middleware";
 
@@ -59,7 +60,7 @@ const getFieldSuggestions = async (req: Request & { params: { key: string } }) =
 };
 
 // Admin
-const createMemberField = withRole(Role.SUPER_ADMIN, async (req) => {
+const createMemberField = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const data = await parseBody(req, memberFieldSchema);
 
   const [last] = await db
@@ -81,6 +82,16 @@ const createMemberField = withRole(Role.SUPER_ADMIN, async (req) => {
       return row;
     });
 
+    if (created) {
+      await recordAudit(user, {
+        action: AuditAction.CREATE,
+        entityType: AuditEntityType.MEMBER_FIELD,
+        entityId: created.id,
+        entityLabel: created.label,
+        changes: createdChanges(created),
+      });
+    }
+
     return Response.json(created, { status: 201 });
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {
@@ -90,9 +101,15 @@ const createMemberField = withRole(Role.SUPER_ADMIN, async (req) => {
   }
 });
 
-const updateMemberField = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const updateMemberField = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
   const data = await parseBody(req, updateMemberFieldSchema);
+
+  const [existing] = await db
+    .select(memberFieldColumns)
+    .from(memberFieldDefinitions)
+    .where(eq(memberFieldDefinitions.id, id))
+    .limit(1);
 
   const updated = await db.transaction(async (tx) => {
     const [row] = await tx
@@ -115,17 +132,28 @@ const updateMemberField = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req)
     return Response.json({ error: "Field not found" }, { status: 404 });
   }
 
+  const changes = diffChanges(existing ?? {}, updated);
+  if (changes) {
+    await recordAudit(user, {
+      action: AuditAction.UPDATE,
+      entityType: AuditEntityType.MEMBER_FIELD,
+      entityId: updated.id,
+      entityLabel: updated.label,
+      changes,
+    });
+  }
+
   return Response.json(updated);
 });
 
-const deleteMemberField = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req) => {
+const deleteMemberField = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, user) => {
   const { id } = req.params;
 
   const deleted = await db.transaction(async (tx) => {
     const [row] = await tx
       .delete(memberFieldDefinitions)
       .where(eq(memberFieldDefinitions.id, id))
-      .returning({ id: memberFieldDefinitions.id, key: memberFieldDefinitions.key });
+      .returning(memberFieldColumns);
     if (row) {
       await tx.execute(
         sql`UPDATE ${users} SET custom_fields = custom_fields - ${row.key}, updated_at = now()`
@@ -139,10 +167,18 @@ const deleteMemberField = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req)
     return Response.json({ error: "Field not found" }, { status: 404 });
   }
 
+  await recordAudit(user, {
+    action: AuditAction.DELETE,
+    entityType: AuditEntityType.MEMBER_FIELD,
+    entityId: deleted.id,
+    entityLabel: deleted.label,
+    changes: deletedChanges(deleted),
+  });
+
   return Response.json({ id: deleted.id });
 });
 
-const reorderMemberFields = withRole(Role.SUPER_ADMIN, async (req) => {
+const reorderMemberFields = withRole(Role.SUPER_ADMIN, async (req, user) => {
   const { ids } = await parseBody(req, memberFieldReorderSchema);
 
   await db.transaction(async (tx) => {
@@ -154,6 +190,13 @@ const reorderMemberFields = withRole(Role.SUPER_ADMIN, async (req) => {
           .where(eq(memberFieldDefinitions.id, id))
       )
     );
+  });
+
+  await recordAudit(user, {
+    action: AuditAction.REORDER,
+    entityType: AuditEntityType.MEMBER_FIELD,
+    entityLabel: "Member fields",
+    metadata: { count: ids.length },
   });
 
   return Response.json({ success: true });

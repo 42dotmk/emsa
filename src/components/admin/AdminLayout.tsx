@@ -1,5 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { Building2, FolderOpen, House, LayoutDashboard, Mountain, Users } from "lucide-react";
+import {
+  Building2,
+  FolderOpen,
+  History,
+  House,
+  LayoutDashboard,
+  Mountain,
+  Users,
+} from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { NavUser } from "@/components/admin/NavUser";
@@ -58,6 +66,12 @@ const navItems = [
     title: "Pillars",
     url: PageRoutes.ADMIN_PILLARS,
     icon: Mountain,
+    requiredRole: Role.SUPER_ADMIN,
+  },
+  {
+    title: "Audit log",
+    url: PageRoutes.ADMIN_AUDIT_LOG,
+    icon: History,
     requiredRole: Role.SUPER_ADMIN,
   },
 ];
