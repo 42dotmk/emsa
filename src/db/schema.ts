@@ -14,8 +14,14 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { type AuditAction, type AuditEntityType, MemberFieldType, Role } from "@/constants/enums";
-import type { AuditChanges, AuditMetadata } from "@/constants/types";
+import {
+  type AuditAction,
+  type AuditEntityType,
+  MemberFieldType,
+  type PointReason,
+  Role,
+} from "@/constants/enums";
+import type { AuditChanges, AuditMetadata, PointContext } from "@/constants/types";
 
 function jsonbOf<T>() {
   return customType<{ data: T }>({
@@ -34,6 +40,7 @@ function jsonbOf<T>() {
 const jsonbObject = jsonbOf<Record<string, string | number>>();
 const jsonbAuditChanges = jsonbOf<AuditChanges>();
 const jsonbAuditMetadata = jsonbOf<AuditMetadata>();
+const jsonbPointContext = jsonbOf<PointContext>();
 
 export const roleEnum = pgEnum("role", [Role.USER, Role.ADMIN, Role.SUPER_ADMIN]);
 
@@ -65,6 +72,8 @@ export const users = pgTable("users", {
   customFields: jsonbObject("custom_fields").notNull().default({}),
   profileCompleted: boolean("profile_completed").notNull().default(false),
   isAlumni: boolean("is_alumni").notNull().default(false),
+  pointsBalance: integer("points_balance").notNull().default(0),
+  membershipPointsHeld: integer("membership_points_held").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -97,6 +106,7 @@ export const projects = pgTable("projects", {
   maxParticipants: integer("max_participants"),
   activeMembersOnly: boolean("active_members_only").notNull().default(false),
   isPinned: boolean("is_pinned").notNull().default(false),
+  points: integer("points"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -148,6 +158,7 @@ export const projectRegistrations = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     packageId: uuid("package_id").references(() => projectPackages.id, { onDelete: "set null" }),
     attended: boolean("attended").notNull().default(false),
+    pointsAwarded: integer("points_awarded").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -329,6 +340,10 @@ export const organization = pgTable("organization", {
   email: varchar("email", { length: 255 }),
   phone: varchar("phone", { length: 50 }),
   pillarLabel: varchar("pillar_label", { length: 64 }).notNull().default("Pillar"),
+  pointsEnabled: boolean("points_enabled").notNull().default(false),
+  pointsName: varchar("points_name", { length: 64 }).notNull().default("Points"),
+  pointsIconUrl: varchar("points_icon_url", { length: 2048 }),
+  membershipPoints: integer("membership_points").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -362,4 +377,25 @@ export const auditLogs = pgTable(
     index("audit_logs_entity_idx").on(table.entityType, table.entityId),
     index("audit_logs_actor_id_idx").on(table.actorId),
   ]
+);
+
+export const pointTransactions = pgTable(
+  "point_transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    amount: integer("amount").notNull(),
+    balanceAfter: integer("balance_after").notNull(),
+    reason: varchar("reason", { length: 32 }).$type<PointReason>().notNull(),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    projectTitle: varchar("project_title", { length: 255 }),
+    note: text("note"),
+    context: jsonbPointContext("context"),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdByName: varchar("created_by_name", { length: 255 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("point_transactions_user_created_idx").on(table.userId, table.createdAt.desc())]
 );

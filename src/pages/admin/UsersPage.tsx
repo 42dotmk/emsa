@@ -24,7 +24,9 @@ import React, { useMemo, useState } from "react";
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 import { DataTableEmptyRow } from "@/components/admin/DataTableEmptyRow";
 import { DataTablePagination } from "@/components/admin/DataTablePagination";
+import { UserPointsDialog } from "@/components/admin/UserPointsDialog";
 import { MembershipBadge } from "@/components/MembershipBadge";
+import { PointsAmount } from "@/components/PointsAmount";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -78,6 +80,7 @@ import type {
 } from "@/constants/types";
 import { useAuth } from "@/context/auth";
 import { useMemberFields } from "@/hooks/useMemberFields";
+import { usePoints } from "@/hooks/usePoints";
 import { apiClient } from "@/lib/api-client";
 import { buildCustomFieldsSchema } from "@/lib/member-fields";
 import { exportToCsv, formatDate, formatDateTime, hasAccess, toDateStr } from "@/lib/utils";
@@ -103,6 +106,8 @@ function useColumns(
   updateUser: (args: { id: string; payload: UpdateUserPayload }) => void,
   onOpenActivations: (user: AdminUser) => void,
   onDeleteUser: (user: AdminUser) => void,
+  onOpenPoints: (user: AdminUser) => void,
+  pointsEnabled: boolean,
   isSuperAdmin: boolean,
   currentUserId: string | undefined
 ): ColumnDef<AdminUser>[] {
@@ -223,6 +228,22 @@ function useColumns(
       },
       cell: () => null,
     },
+    ...(pointsEnabled
+      ? [
+          {
+            accessorKey: "pointsBalance",
+            header: "Points",
+            cell: ({ row }) => (
+              <button
+                onClick={() => onOpenPoints(row.original)}
+                className="rounded-md px-1.5 py-0.5 hover:bg-accent"
+              >
+                <PointsAmount amount={row.original.pointsBalance} />
+              </button>
+            ),
+          } satisfies ColumnDef<AdminUser>,
+        ]
+      : []),
     {
       accessorKey: "isAlumni",
       header: "Alumni",
@@ -696,6 +717,8 @@ export function UsersPage() {
   const { user } = useAuth();
   const isSuperAdmin = !!user && hasAccess(user.role, Role.SUPER_ADMIN);
   const queryClient = useQueryClient();
+  const { enabled: pointsEnabled } = usePoints();
+  const [pointsUser, setPointsUser] = useState<AdminUser | undefined>(undefined);
 
   // Activations popup
   const [activationHistoryUser, setActivationHistoryUser] = useState<AdminUser | null>(null);
@@ -886,6 +909,8 @@ export function UsersPage() {
     updateUser,
     handleOpenActivations,
     handleOpenDelete,
+    setPointsUser,
+    pointsEnabled,
     isSuperAdmin,
     user?.id
   );
@@ -1233,8 +1258,8 @@ export function UsersPage() {
             <AlertDialogTitle>Delete user</AlertDialogTitle>
             <AlertDialogDescription>
               This permanently removes {deletingUser?.name} ({deletingUser?.email}) along with their
-              project and workshop registrations, certificates, and membership history. This cannot
-              be undone.
+              project and workshop registrations, certificates, membership and points history. This
+              cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
@@ -1252,6 +1277,12 @@ export function UsersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <UserPointsDialog
+        user={pointsUser}
+        canAdjust={isSuperAdmin}
+        onOpenChange={(open) => !open && setPointsUser(undefined)}
+      />
     </div>
   );
 }

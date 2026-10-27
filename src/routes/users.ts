@@ -36,6 +36,7 @@ import {
   firstIssueMessage,
 } from "@/lib/member-fields";
 import { HttpError, parseBody, withRole } from "@/lib/middleware";
+import { syncMembershipPoints } from "@/lib/points";
 import { deleteObject, getPresignedUploadUrl, validateImageContentType } from "@/lib/s3";
 
 const meColumns = {
@@ -47,6 +48,7 @@ const meColumns = {
   customFields: users.customFields,
   profileCompleted: users.profileCompleted,
   isAlumni: users.isAlumni,
+  pointsBalance: users.pointsBalance,
   createdAt: users.createdAt,
 };
 
@@ -59,6 +61,7 @@ const adminUserColumns = {
   role: users.role,
   isAlumni: users.isAlumni,
   imageUrl: users.imageUrl,
+  pointsBalance: users.pointsBalance,
   createdAt: users.createdAt,
 };
 
@@ -400,6 +403,7 @@ const createActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, 
       changes: createdChanges({ startDate: activation.startDate, endDate: activation.endDate }),
       metadata: { userId },
     });
+    await syncMembershipPoints(user, [userId]);
   }
 
   return Response.json(activation, { status: 201 });
@@ -448,6 +452,7 @@ const updateActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, 
       metadata: { userId: existing.userId },
     });
   }
+  await syncMembershipPoints(user, [existing.userId]);
 
   return Response.json(updated);
 });
@@ -472,6 +477,7 @@ const deleteActivation = withRole<{ id: string }>(Role.SUPER_ADMIN, async (req, 
     changes: deletedChanges({ startDate: deleted.startDate, endDate: deleted.endDate }),
     metadata: { userId: deleted.userId },
   });
+  await syncMembershipPoints(user, [deleted.userId]);
 
   return Response.json({ id: deleted.id });
 });
@@ -554,6 +560,11 @@ const bulkImportUsers = withRole(Role.SUPER_ADMIN, async (req, user) => {
   if (data.sendWelcomeEmails) {
     await sendBulkWelcomeEmails(created.map((u) => ({ email: u.email, name: u.name })));
   }
+
+  await syncMembershipPoints(
+    user,
+    created.map((u) => u.id)
+  );
 
   return Response.json({ created: created.length, skipped }, { status: 201 });
 });

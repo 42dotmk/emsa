@@ -2,7 +2,7 @@ import { type ClassValue, clsx } from "clsx";
 import { type NavigateFunction } from "react-router-dom";
 import { twMerge } from "tailwind-merge";
 
-import { Role } from "@/constants/enums";
+import { PointReason, Role } from "@/constants/enums";
 import { PageRoutes } from "@/constants/routes";
 import {
   type AuditValue,
@@ -221,4 +221,29 @@ export function formatAuditValue(value: AuditValue): string {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) return formatDateTime(value);
   return String(value);
+}
+
+const POINT_REASON_LABELS: Record<PointReason, string> = {
+  [PointReason.PROJECT_ATTENDANCE]: "Project attendance",
+  [PointReason.PROJECT_ATTENDANCE_REVOKED]: "Attendance removed",
+  [PointReason.MEMBERSHIP_ACTIVE]: "Active membership",
+  [PointReason.MEMBERSHIP_ADJUSTED]: "Membership points changed",
+  [PointReason.MEMBERSHIP_ENDED]: "Membership ended",
+  [PointReason.MANUAL]: "Manual adjustment",
+};
+
+export function pointReasonLabel(reason: string): string {
+  return POINT_REASON_LABELS[reason as PointReason] ?? reason;
+}
+
+export function getDocumentOffsetTop(element: HTMLElement): number {
+  let top = 0;
+  for (
+    let node: HTMLElement | null = element;
+    node;
+    node = node.offsetParent as HTMLElement | null
+  ) {
+    top += node.offsetTop;
+  }
+  return top;
 }

@@ -115,12 +115,14 @@ export async function lookupProjectTitle(id: string): Promise<string | undefined
   return row?.title;
 }
 
-export async function recordAudit(actor: JwtUser, entry: AuditEntry): Promise<void> {
+export const SYSTEM_ACTOR_NAME = "System";
+
+export async function recordAudit(actor: JwtUser | null, entry: AuditEntry): Promise<void> {
   try {
     await db.insert(auditLogs).values({
-      actorId: actor.sub,
-      actorName: actor.name,
-      actorEmail: actor.email,
+      actorId: actor?.sub ?? null,
+      actorName: actor?.name ?? SYSTEM_ACTOR_NAME,
+      actorEmail: actor?.email ?? "",
       action: entry.action,
       entityType: entry.entityType,
       entityId: entry.entityId == null ? null : String(entry.entityId),

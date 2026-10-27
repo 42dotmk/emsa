@@ -197,6 +197,7 @@ export const projectSchema = z
     maxParticipants: z.number().int().min(1).nullable().optional(),
     activeMembersOnly: z.boolean().default(false),
     isPinned: z.boolean().default(false),
+    points: z.number().int().min(1).max(100000).nullable().optional(),
   })
   .refine(
     (data) => !(!data.registrationOpensAt && (data.registrationClosesAt || data.maxParticipants)),
@@ -229,6 +230,7 @@ export const updateProjectSchema = z
     maxParticipants: z.number().int().min(1).nullable().optional(),
     activeMembersOnly: z.boolean().optional(),
     isPinned: z.boolean().optional(),
+    points: z.number().int().min(1).max(100000).nullable().optional(),
   })
   .refine(
     (data) =>
@@ -242,7 +244,8 @@ export const updateProjectSchema = z
       data.registrationClosesAt !== undefined ||
       data.maxParticipants !== undefined ||
       data.activeMembersOnly !== undefined ||
-      data.isPinned !== undefined,
+      data.isPinned !== undefined ||
+      data.points !== undefined,
     { message: "At least one field must be provided" }
   )
   .refine(
@@ -361,6 +364,10 @@ export const updateOrganizationSchema = z
     email: z.email().nullable().optional(),
     phone: z.string().nullable().optional(),
     pillarLabel: z.string().min(1).max(64).optional(),
+    pointsEnabled: z.boolean().optional(),
+    pointsName: z.string().trim().min(1, "Points name is required").max(64).optional(),
+    pointsIconUrl: z.url().nullable().optional(),
+    membershipPoints: z.number().int().min(0).max(100000).optional(),
   })
   .refine(
     (data) =>
@@ -374,7 +381,11 @@ export const updateOrganizationSchema = z
       data.location !== undefined ||
       data.email !== undefined ||
       data.phone !== undefined ||
-      data.pillarLabel !== undefined,
+      data.pillarLabel !== undefined ||
+      data.pointsEnabled !== undefined ||
+      data.pointsName !== undefined ||
+      data.pointsIconUrl !== undefined ||
+      data.membershipPoints !== undefined,
     { message: "At least one field must be provided" }
   );
 
@@ -444,3 +455,38 @@ export const auditLogQuerySchema = z.object({
 });
 
 export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;
+
+export const pointsAdjustmentSchema = z.object({
+  amount: z
+    .number({ error: "Amount is required" })
+    .int("Amount must be a whole number")
+    .refine((value) => value !== 0, "Amount cannot be zero")
+    .refine((value) => Math.abs(value) <= 100000, "Amount is too large"),
+  note: z.string().trim().min(1, "A note is required").max(500, "Note is too long"),
+});
+
+export type PointsAdjustmentPayload = z.infer<typeof pointsAdjustmentSchema>;
+
+export const pointsAdjustmentFormSchema = z.object({
+  direction: z.enum(["add", "remove"]),
+  amount: z
+    .number({ error: "Enter an amount" })
+    .int("Must be a whole number")
+    .min(1, "Must be at least 1")
+    .max(100000, "Amount is too large"),
+  note: z.string().trim().min(1, "A note is required").max(500, "Note is too long"),
+});
+
+export type PointsAdjustmentFormValues = z.infer<typeof pointsAdjustmentFormSchema>;
+
+export const pointsSettingsFormSchema = z.object({
+  pointsEnabled: z.boolean(),
+  pointsName: z.string().trim().min(1, "Name is required").max(64, "Name is too long"),
+  membershipPoints: z
+    .number({ error: "Enter a number" })
+    .int("Must be a whole number")
+    .min(0, "Cannot be negative")
+    .max(100000, "Too large"),
+});
+
+export type PointsSettingsFormValues = z.infer<typeof pointsSettingsFormSchema>;

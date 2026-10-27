@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 import { Link, NavLink, useLocation, useOutlet } from "react-router-dom";
 
 import { MembershipBadge } from "@/components/MembershipBadge";
+import { PointsAmount } from "@/components/PointsAmount";
+import { PointsPill } from "@/components/PointsPill";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,9 +26,10 @@ import { Separator } from "@/components/ui/separator";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Role } from "@/constants/enums";
 import { queryKeys } from "@/constants/query-keys";
-import { ApiRoutes, PageRoutes } from "@/constants/routes";
+import { ApiRoutes, PageRoutes, PROFILE_POINTS_ANCHOR } from "@/constants/routes";
 import { type OrganizationPublic } from "@/constants/types";
 import { useAuth } from "@/context/auth";
+import { usePoints } from "@/hooks/usePoints";
 import { apiClient } from "@/lib/api-client";
 import { spring } from "@/lib/motion";
 import { cn, hasAccess } from "@/lib/utils";
@@ -114,46 +117,50 @@ function UserMenu() {
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <UserAvatar name={user.name} imageUrl={user.imageUrl ?? null} className="size-8" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-50">
-        <div className="px-2 py-1.5">
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm font-medium">{user.name}</p>
-            <MembershipBadge
-              isActive={user.isActive}
-              isAlumni={user.isAlumni}
-              className="h-4 rounded-sm px-1 text-[10px]"
-            />
+    <div className="relative z-20 flex items-center gap-2">
+      <PointsPill />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <UserAvatar name={user.name} imageUrl={user.imageUrl ?? null} className="size-8" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-50">
+          <div className="px-2 py-1.5">
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-medium">{user.name}</p>
+              <MembershipBadge
+                isActive={user.isActive}
+                isAlumni={user.isAlumni}
+                className="h-4 rounded-sm px-1 text-[10px]"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{user.email}</p>
           </div>
-          <p className="text-xs text-muted-foreground">{user.email}</p>
-        </div>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link to={PageRoutes.PROFILE}>Profile</Link>
-        </DropdownMenuItem>
-        {hasAccess(user.role, Role.ADMIN) && (
+          <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link to={PageRoutes.ADMIN}>Admin Panel</Link>
+            <Link to={PageRoutes.PROFILE}>Profile</Link>
           </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link to={PageRoutes.LOGIN} onClick={logout}>
-            Sign out
-          </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {hasAccess(user.role, Role.ADMIN) && (
+            <DropdownMenuItem asChild>
+              <Link to={PageRoutes.ADMIN}>Admin Panel</Link>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link to={PageRoutes.LOGIN} onClick={logout}>
+              Sign out
+            </Link>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
 function MobileUserSection({ onClose }: { onClose: () => void }) {
   const { user, logout } = useAuth();
+  const { enabled: pointsEnabled } = usePoints();
 
   if (!user) {
     return (
@@ -186,6 +193,16 @@ function MobileUserSection({ onClose }: { onClose: () => void }) {
           <p className="truncate text-xs text-muted-foreground">{user.email}</p>
         </div>
       </div>
+      {pointsEnabled && (
+        <Link
+          to={`${PageRoutes.PROFILE}#${PROFILE_POINTS_ANCHOR}`}
+          onClick={onClose}
+          className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+        >
+          <PointsAmount amount={user.pointsBalance} showName />
+          <span className="text-xs font-medium text-primary">View history</span>
+        </Link>
+      )}
       <Separator />
       <Link
         to={PageRoutes.PROFILE}
@@ -241,7 +258,10 @@ export function PublicLayout() {
         <MobileNav>
           <MobileNavHeader>
             <OrgLogo org={org} />
-            <MobileNavToggle isOpen={mobileOpen} onClick={() => setMobileOpen((v) => !v)} />
+            <div className="flex items-center gap-2">
+              <PointsPill />
+              <MobileNavToggle isOpen={mobileOpen} onClick={() => setMobileOpen((v) => !v)} />
+            </div>
           </MobileNavHeader>
 
           <MobileNavMenu isOpen={mobileOpen}>

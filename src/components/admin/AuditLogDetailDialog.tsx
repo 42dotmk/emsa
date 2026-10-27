@@ -16,7 +16,7 @@ import {
 import { UserAvatar } from "@/components/UserAvatar";
 import { AuditAction } from "@/constants/enums";
 import type { AuditLogEntry, AuditMetadata } from "@/constants/types";
-import { formatAuditValue, formatDateTime, humanizeFieldName } from "@/lib/utils";
+import { formatAuditValue, formatDateTime, humanizeFieldName, pointReasonLabel } from "@/lib/utils";
 
 const HIDDEN_METADATA_KEYS = new Set(["projectId", "workshopId", "userId", "emails"]);
 
@@ -77,7 +77,9 @@ export function AuditLogDetailDialog({
               {details.map(([key, value]) => (
                 <div key={key} className="contents">
                   <dt className="text-muted-foreground">{humanizeFieldName(key)}</dt>
-                  <dd className="break-words">{formatAuditValue(value)}</dd>
+                  <dd className="break-words">
+                    {key === "reason" ? pointReasonLabel(String(value)) : formatAuditValue(value)}
+                  </dd>
                 </div>
               ))}
             </dl>

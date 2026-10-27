@@ -35,5 +35,16 @@ export const AuditEntityType = {
   CAPACITY_POOL: "CAPACITY_POOL",
   REGISTRATION: "REGISTRATION",
   CERTIFICATE: "CERTIFICATE",
+  POINTS: "POINTS",
 } as const;
 export type AuditEntityType = (typeof AuditEntityType)[keyof typeof AuditEntityType];
+
+export const PointReason = {
+  PROJECT_ATTENDANCE: "PROJECT_ATTENDANCE",
+  PROJECT_ATTENDANCE_REVOKED: "PROJECT_ATTENDANCE_REVOKED",
+  MEMBERSHIP_ACTIVE: "MEMBERSHIP_ACTIVE",
+  MEMBERSHIP_ADJUSTED: "MEMBERSHIP_ADJUSTED",
+  MEMBERSHIP_ENDED: "MEMBERSHIP_ENDED",
+  MANUAL: "MANUAL",
+} as const;
+export type PointReason = (typeof PointReason)[keyof typeof PointReason];

@@ -33,6 +33,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -57,6 +58,7 @@ import {
   type ProjectPackage,
 } from "@/constants/types";
 import { usePillarLabels } from "@/hooks/usePillarLabels";
+import { usePoints } from "@/hooks/usePoints";
 import { apiClient } from "@/lib/api-client";
 import { getImageId, getImageSrc, toDatetimeLocalValue } from "@/lib/utils";
 
@@ -76,6 +78,7 @@ const formSchema = z
     maxParticipants: z.number().int().min(1, "Must be at least 1").nullable().optional(),
     activeMembersOnly: z.boolean(),
     isPinned: z.boolean(),
+    points: z.number().int().min(1, "Must be at least 1").max(100000).nullable().optional(),
   })
   .refine(
     (data) => !(!data.registrationOpensAt && (data.registrationClosesAt || data.maxParticipants)),
@@ -170,6 +173,7 @@ export function ProjectDialog({
   isPending,
 }: ProjectDialogProps) {
   const { singular, singularLower } = usePillarLabels();
+  const { enabled: pointsEnabled, name: pointsName } = usePoints();
   const { data: pillars = [] } = useQuery({
     queryKey: queryKeys.admin.pillars(),
     queryFn: () => apiClient.get<Pillar[]>(ApiRoutes.ADMIN_PILLARS),
@@ -210,6 +214,7 @@ export function ProjectDialog({
           maxParticipants: project.maxParticipants ?? undefined,
           activeMembersOnly: project.activeMembersOnly,
           isPinned: project.isPinned,
+          points: project.points ?? undefined,
         }
       : {
           title: "",
@@ -222,6 +227,7 @@ export function ProjectDialog({
           maxParticipants: undefined,
           activeMembersOnly: false,
           isPinned: false,
+          points: undefined,
         },
   });
 
@@ -295,6 +301,7 @@ export function ProjectDialog({
         maxParticipants: hasPackages ? null : (values.maxParticipants ?? null),
         activeMembersOnly: values.activeMembersOnly,
         isPinned: values.isPinned,
+        points: values.points ?? null,
       },
       images,
       draftPackages,
@@ -401,6 +408,37 @@ export function ProjectDialog({
                   </FormItem>
                 )}
               />
+
+              {pointsEnabled && (
+                <FormField
+                  control={form.control}
+                  name="points"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{pointsName} for attending</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
+                          placeholder="None"
+                          className="w-32"
+                          value={field.value ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            field.onChange(val === "" ? null : parseInt(val, 10));
+                          }}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Given to members when they are marked as attended. Leave empty for none.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <div className="flex flex-col gap-3 rounded-md border p-3">
                 <div className="flex items-center justify-between">
