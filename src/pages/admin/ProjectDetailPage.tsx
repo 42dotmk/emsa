@@ -622,6 +622,7 @@ function RegistrationsTab({ project }: { project: Project }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: registrationsQueryKey });
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.me() });
     },
   });
 

@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 import { PointsAmount } from "@/components/PointsAmount";
 import { PointsHistoryList } from "@/components/PointsHistoryList";
@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { queryKeys } from "@/constants/query-keys";
 import { ApiRoutes } from "@/constants/routes";
-import type { PointsHistory } from "@/constants/types";
+import type { PointsHistory, UserProfile } from "@/constants/types";
 import { usePoints } from "@/hooks/usePoints";
 import { apiClient } from "@/lib/api-client";
 
 const PREVIEW_COUNT = 5;
 
 export function PointsCard() {
+  const queryClient = useQueryClient();
   const { enabled, name } = usePoints();
   const [showAll, setShowAll] = useState(false);
 
@@ -23,6 +24,16 @@ export function PointsCard() {
     enabled,
     staleTime: 0,
   });
+
+  const balance = data?.balance;
+  useEffect(() => {
+    if (balance === undefined) return;
+    queryClient.setQueryData<UserProfile>(queryKeys.me(), (profile) =>
+      profile && profile.pointsBalance !== balance
+        ? { ...profile, pointsBalance: balance }
+        : profile
+    );
+  }, [balance, queryClient]);
 
   if (!enabled) return null;
 

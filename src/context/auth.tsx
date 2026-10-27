@@ -24,6 +24,7 @@ export interface AuthUser {
   profileCompleted: boolean;
   isAlumni: boolean;
   isActive: boolean;
+  pointsBalance: number;
 }
 
 interface AuthContextValue {
@@ -56,6 +57,7 @@ function decodeToken(token: string): AuthUser | null {
       profileCompleted: payload.profileCompleted ?? false,
       isAlumni: false,
       isActive: false,
+      pointsBalance: 0,
     };
   } catch {
     return null;
@@ -126,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileCompleted: meData.profileCompleted,
       isAlumni: meData.isAlumni ?? false,
       isActive: meData.isActive ?? false,
+      pointsBalance: meData.pointsBalance ?? 0,
     };
   }, [user, meData]);
 

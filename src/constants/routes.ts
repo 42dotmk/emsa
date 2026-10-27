@@ -29,6 +29,8 @@ export const PageRoutes = {
   SETUP_PASSWORD: "/setup-password",
 } as const;
 
+export const PROFILE_POINTS_ANCHOR = "points";
+
 export const ApiRoutes = {
   AUTH_REGISTER: "/api/auth/register",
   AUTH_LOGIN: "/api/auth/login",

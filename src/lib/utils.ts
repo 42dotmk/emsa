@@ -235,3 +235,15 @@ const POINT_REASON_LABELS: Record<PointReason, string> = {
 export function pointReasonLabel(reason: string): string {
   return POINT_REASON_LABELS[reason as PointReason] ?? reason;
 }
+
+export function getDocumentOffsetTop(element: HTMLElement): number {
+  let top = 0;
+  for (
+    let node: HTMLElement | null = element;
+    node;
+    node = node.offsetParent as HTMLElement | null
+  ) {
+    top += node.offsetTop;
+  }
+  return top;
+}

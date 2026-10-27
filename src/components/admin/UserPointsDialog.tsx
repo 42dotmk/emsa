@@ -75,6 +75,7 @@ export function UserPointsDialog({ user, canAdjust, onOpenChange }: UserPointsDi
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.userPoints(userId!) });
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.me() });
       form.reset(DEFAULT_VALUES);
     },
   });

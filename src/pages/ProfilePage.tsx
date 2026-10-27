@@ -1,9 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, LogOut } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
+import { useLocation } from "react-router-dom";
 import { z } from "zod";
 
 import { ImageUpload } from "@/components/admin/ImageUpload";
@@ -22,7 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/UserAvatar";
 import { queryKeys } from "@/constants/query-keys";
-import { ApiRoutes } from "@/constants/routes";
+import { ApiRoutes, PROFILE_POINTS_ANCHOR } from "@/constants/routes";
 import {
   type CustomFieldValues,
   type ImageEntry,
@@ -35,7 +36,7 @@ import { usePoints } from "@/hooks/usePoints";
 import { apiClient } from "@/lib/api-client";
 import { buildCustomFieldsSchema, isEmptyFieldValue } from "@/lib/member-fields";
 import { spring } from "@/lib/motion";
-import { getImageSrc, resolveImageEntry } from "@/lib/utils";
+import { getDocumentOffsetTop, getImageSrc, resolveImageEntry } from "@/lib/utils";
 
 const FADE_UP = {
   initial: { opacity: 0, y: 20 },
@@ -57,6 +58,8 @@ export function ProfilePage() {
   const queryClient = useQueryClient();
   const { logout, updateUser, login, user } = useAuth();
   const { enabled: pointsEnabled } = usePoints();
+  const { hash } = useLocation();
+  const reduceMotion = useReducedMotion();
   const [imageEntry, setImageEntry] = useState<ImageEntry>({ type: "none" });
 
   const { data: profile, isLoading } = useQuery({
@@ -119,6 +122,22 @@ export function ProfilePage() {
       ),
     });
   }, [profile, fieldDefs, form]);
+
+  const isReady = !isLoading && !isLoadingFields;
+
+  useEffect(() => {
+    if (!isReady || !pointsEnabled || hash !== `#${PROFILE_POINTS_ANCHOR}`) return;
+    const frame = requestAnimationFrame(() => {
+      const section = document.getElementById(PROFILE_POINTS_ANCHOR);
+      if (!section) return;
+      const margin = parseFloat(getComputedStyle(section).scrollMarginTop) || 0;
+      window.scrollTo({
+        top: getDocumentOffsetTop(section) - margin,
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isReady, pointsEnabled, hash, reduceMotion]);
 
   function handleSubmit(values: ProfileFormValues) {
     updateMe({ ...values, imageEntry });
@@ -207,7 +226,12 @@ export function ProfilePage() {
         </motion.div>
 
         {pointsEnabled && (
-          <motion.div {...FADE_UP} transition={{ ...spring.smooth, delay: 0.12 }}>
+          <motion.div
+            id={PROFILE_POINTS_ANCHOR}
+            className="scroll-mt-24"
+            {...FADE_UP}
+            transition={{ ...spring.smooth, delay: 0.12 }}
+          >
             <PointsCard />
           </motion.div>
         )}

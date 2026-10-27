@@ -115,7 +115,7 @@ export function PointsSection() {
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.organization() });
       queryClient.invalidateQueries({ queryKey: queryKeys.organization() });
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.myPoints() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.me() });
     },
   });
 
