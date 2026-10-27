@@ -45,8 +45,9 @@ import type {
 } from "@/constants/types";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePillarLabels } from "@/hooks/usePillarLabels";
+import { usePoints } from "@/hooks/usePoints";
 import { apiClient } from "@/lib/api-client";
-import { cn, formatDateTime, humanizeFieldName } from "@/lib/utils";
+import { cn, formatDateTime, humanizeFieldName, pointReasonLabel } from "@/lib/utils";
 
 const ALL = "all";
 const MAX_SUMMARY_FIELDS = 3;
@@ -71,6 +72,7 @@ const ACTION_BADGE_VARIANTS: Record<AuditAction, "secondary" | "destructive" | "
 
 function useEntityTypeLabels(): Record<AuditEntityType, string> {
   const { singular } = usePillarLabels();
+  const { name: pointsName } = usePoints();
   return {
     [AuditEntityType.PROJECT]: "Project",
     [AuditEntityType.PILLAR]: singular,
@@ -85,10 +87,12 @@ function useEntityTypeLabels(): Record<AuditEntityType, string> {
     [AuditEntityType.CAPACITY_POOL]: "Capacity pool",
     [AuditEntityType.REGISTRATION]: "Registration",
     [AuditEntityType.CERTIFICATE]: "Certificate",
+    [AuditEntityType.POINTS]: pointsName,
   };
 }
 
 function entityLink(entry: AuditLogEntry): string | null {
+  if (entry.entityType === AuditEntityType.POINTS) return PageRoutes.ADMIN_USERS;
   const projectId = entry.metadata?.projectId;
   if (typeof projectId === "string") {
     return PageRoutes.ADMIN_PROJECT_DETAIL.replace(":id", projectId);
@@ -113,6 +117,10 @@ function entityLink(entry: AuditLogEntry): string | null {
 }
 
 function summarize(entry: AuditLogEntry): string {
+  if (entry.entityType === AuditEntityType.POINTS) {
+    const amount = Number(entry.metadata?.amount ?? 0);
+    return `${amount > 0 ? "+" : ""}${amount} · ${pointReasonLabel(String(entry.metadata?.reason ?? ""))}`;
+  }
   const count = entry.metadata?.count ?? entry.metadata?.created;
   switch (entry.action) {
     case AuditAction.UPDATE: {

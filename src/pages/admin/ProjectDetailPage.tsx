@@ -27,6 +27,7 @@ import {
 } from "@/components/admin/ProjectDialog";
 import { RowActions } from "@/components/admin/RowActions";
 import { WorkshopDialog } from "@/components/admin/WorkshopDialog";
+import { PointsAmount } from "@/components/PointsAmount";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -89,6 +90,7 @@ import {
 } from "@/constants/types";
 import { useAuth } from "@/context/auth";
 import { useDialogState } from "@/hooks/useDialogState";
+import { usePoints } from "@/hooks/usePoints";
 import { apiClient } from "@/lib/api-client";
 import {
   cn,
@@ -582,6 +584,7 @@ function AddParticipantDialog({
 // ─── Registrations Tab ──────────────────────────────────────────────────────
 
 function RegistrationsTab({ project }: { project: Project }) {
+  const { enabled: pointsEnabled } = usePoints();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isSuperAdmin = hasAccess(user?.role ?? Role.USER, Role.SUPER_ADMIN);
@@ -616,7 +619,10 @@ function RegistrationsTab({ project }: { project: Project }) {
   const { mutate: toggleAttended } = useMutation({
     mutationFn: ({ id, attended }: { id: string; attended: boolean }) =>
       apiClient.patch(ApiRoutes.ADMIN_PROJECT_REGISTRATION_BY_ID.replace(":id", id), { attended }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: registrationsQueryKey }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: registrationsQueryKey });
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
+    },
   });
 
   const { mutate: addRegistration, isPending: isAdding } = useMutation({
@@ -779,6 +785,13 @@ function RegistrationsTab({ project }: { project: Project }) {
                         >
                           Attended
                         </label>
+                        {pointsEnabled && reg.pointsAwarded > 0 && (
+                          <PointsAmount
+                            amount={reg.pointsAwarded}
+                            signed
+                            className="text-xs text-green-600 dark:text-green-400"
+                          />
+                        )}
                         {isSuperAdmin && (
                           <Button
                             variant="ghost"

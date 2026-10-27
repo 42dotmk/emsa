@@ -3,6 +3,7 @@ import type { AuditLogQuery } from "@/constants/schemas";
 export const queryKeys = {
   organization: () => ["organization"] as const,
   me: () => ["me"] as const,
+  myPoints: () => ["me", "points"] as const,
   positions: () => ["positions"] as const,
   supporters: () => ["supporters"] as const,
   publicProjects: () => ["public-projects"] as const,
@@ -17,6 +18,7 @@ export const queryKeys = {
   myWorkshopRegistration: (workshopId: string) => ["my-workshop-registration", workshopId] as const,
   admin: {
     users: () => ["admin", "users"] as const,
+    userPoints: (userId: string) => ["admin", "users", userId, "points"] as const,
     projects: () => ["admin", "projects"] as const,
     pillars: () => ["admin", "pillars"] as const,
     organization: () => ["admin", "organization"] as const,

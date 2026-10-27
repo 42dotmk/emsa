@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { ImageUpload } from "@/components/admin/ImageUpload";
 import { CustomFieldInput } from "@/components/CustomFieldInput";
+import { PointsCard } from "@/components/PointsCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -30,6 +31,7 @@ import {
 } from "@/constants/types";
 import { useAuth } from "@/context/auth";
 import { useMemberFields } from "@/hooks/useMemberFields";
+import { usePoints } from "@/hooks/usePoints";
 import { apiClient } from "@/lib/api-client";
 import { buildCustomFieldsSchema, isEmptyFieldValue } from "@/lib/member-fields";
 import { spring } from "@/lib/motion";
@@ -54,6 +56,7 @@ function getMissingFields(defs: MemberFieldDefinition[], profile: UserProfile): 
 export function ProfilePage() {
   const queryClient = useQueryClient();
   const { logout, updateUser, login, user } = useAuth();
+  const { enabled: pointsEnabled } = usePoints();
   const [imageEntry, setImageEntry] = useState<ImageEntry>({ type: "none" });
 
   const { data: profile, isLoading } = useQuery({
@@ -202,6 +205,12 @@ export function ProfilePage() {
             </div>
           )}
         </motion.div>
+
+        {pointsEnabled && (
+          <motion.div {...FADE_UP} transition={{ ...spring.smooth, delay: 0.12 }}>
+            <PointsCard />
+          </motion.div>
+        )}
 
         {/* Avatar card */}
         <motion.div {...FADE_UP} transition={{ ...spring.smooth, delay: 0.16 }}>

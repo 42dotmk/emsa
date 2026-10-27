@@ -29,6 +29,7 @@ import {
 } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { type BunRequest, HttpError, parseBody, withRole } from "@/lib/middleware";
+import { recordPointChanges, revokeRegistrationPointsTx, syncAttendancePoints } from "@/lib/points";
 import {
   deleteObject,
   deleteObjects,
@@ -185,6 +186,7 @@ const getProjects = async () => {
       registrationClosesAt: projects.registrationClosesAt,
       maxParticipants: projects.maxParticipants,
       activeMembersOnly: projects.activeMembersOnly,
+      points: projects.points,
       isPinned: projects.isPinned,
     })
     .from(projects)
@@ -246,6 +248,7 @@ const getProjects = async () => {
         registrationClosesAt: p.registrationClosesAt,
         activeMembersOnly: p.activeMembersOnly,
         isPinned: p.isPinned,
+        points: p.points,
         images: imagesByProject[p.id] ?? [],
         canRegister,
         packages: publicPackages,
@@ -270,6 +273,7 @@ const getProjectById = async (req: BunRequest<{ id: string }>) => {
       registrationClosesAt: projects.registrationClosesAt,
       maxParticipants: projects.maxParticipants,
       activeMembersOnly: projects.activeMembersOnly,
+      points: projects.points,
     })
     .from(projects)
     .leftJoin(pillars, eq(projects.pillarId, pillars.id))
@@ -316,6 +320,7 @@ const getProjectById = async (req: BunRequest<{ id: string }>) => {
     registrationOpensAt: row.registrationOpensAt,
     registrationClosesAt: row.registrationClosesAt,
     activeMembersOnly: row.activeMembersOnly,
+    points: row.points,
     images: images.map((i) => i.url),
     canRegister,
     packages: publicPackages,
@@ -374,7 +379,7 @@ const unregisterFromProject = withRole<{ id: string }>(Role.USER, async (req, us
     return Response.json({ error: "Registration has already closed" }, { status: 422 });
   }
 
-  const [deleted] = await db.transaction(async (tx) => {
+  const { removed, pointChanges } = await db.transaction(async (tx) => {
     // Cancel all workshop registrations for this user within this project
     const projectWorkshops = await tx
       .select({ id: workshops.id })
@@ -393,13 +398,29 @@ const unregisterFromProject = withRole<{ id: string }>(Role.USER, async (req, us
       );
     }
 
-    return tx
+    const ownRegistration = and(
+      eq(projectRegistrations.projectId, id),
+      eq(projectRegistrations.userId, user.sub)
+    );
+    const existing = await tx
+      .select({ id: projectRegistrations.id })
+      .from(projectRegistrations)
+      .where(ownRegistration);
+    const pointChanges = await revokeRegistrationPointsTx(
+      tx,
+      user,
+      existing.map((r) => r.id)
+    );
+    const [removed] = await tx
       .delete(projectRegistrations)
-      .where(and(eq(projectRegistrations.projectId, id), eq(projectRegistrations.userId, user.sub)))
+      .where(ownRegistration)
       .returning({ id: projectRegistrations.id });
+    return { removed, pointChanges };
   });
 
-  if (!deleted) return Response.json({ error: "Registration not found" }, { status: 404 });
+  if (!removed) return Response.json({ error: "Registration not found" }, { status: 404 });
+
+  await recordPointChanges(user, pointChanges);
 
   return Response.json({ success: true });
 });
@@ -592,6 +613,7 @@ const getProjectsAdmin = withRole(Role.ADMIN, async () => {
       registrationClosesAt: projects.registrationClosesAt,
       maxParticipants: projects.maxParticipants,
       activeMembersOnly: projects.activeMembersOnly,
+      points: projects.points,
       isPinned: projects.isPinned,
       createdAt: projects.createdAt,
       updatedAt: projects.updatedAt,
@@ -774,6 +796,10 @@ const updateProject = withRole<{ id: string }>(Role.ADMIN, async (req, user) => 
     });
   }
 
+  if (before && before.points !== updated.points) {
+    await syncAttendancePoints(user, { projectId: updated.id });
+  }
+
   return Response.json(updated);
 });
 
@@ -838,6 +864,7 @@ const getProjectRegistrations = withRole<{ id: string }>(Role.ADMIN, async (req)
       packageId: projectRegistrations.packageId,
       packageName: projectPackages.name,
       attended: projectRegistrations.attended,
+      pointsAwarded: projectRegistrations.pointsAwarded,
       certificateUrl: registrationCertificates.url,
       certificateFilename: registrationCertificates.filename,
       createdAt: projectRegistrations.createdAt,
@@ -863,7 +890,7 @@ const getProjectRegistrations = withRole<{ id: string }>(Role.ADMIN, async (req)
   );
 });
 
-const updateRegistrationAttended = withRole<{ id: string }>(Role.ADMIN, async (req) => {
+const updateRegistrationAttended = withRole<{ id: string }>(Role.ADMIN, async (req, user) => {
   const { id } = req.params;
   const body = await parseBody(req, z.object({ attended: z.boolean() }));
 
@@ -874,6 +901,8 @@ const updateRegistrationAttended = withRole<{ id: string }>(Role.ADMIN, async (r
     .returning();
 
   if (!updated) return Response.json({ error: "Registration not found" }, { status: 404 });
+
+  await syncAttendancePoints(user, { registrationIds: [updated.id] });
 
   return Response.json(updated);
 });
@@ -929,7 +958,7 @@ const deleteProjectRegistration = withRole<{ id: string }>(Role.SUPER_ADMIN, asy
 
   if (!reg) return Response.json({ error: "Registration not found" }, { status: 404 });
 
-  await db.transaction(async (tx) => {
+  const pointChanges = await db.transaction(async (tx) => {
     const projectWorkshops = await tx
       .select({ id: workshops.id })
       .from(workshops)
@@ -947,7 +976,9 @@ const deleteProjectRegistration = withRole<{ id: string }>(Role.SUPER_ADMIN, asy
       );
     }
 
+    const revoked = await revokeRegistrationPointsTx(tx, user, [id]);
     await tx.delete(projectRegistrations).where(eq(projectRegistrations.id, id));
+    return revoked;
   });
 
   await recordAudit(user, {
@@ -957,6 +988,7 @@ const deleteProjectRegistration = withRole<{ id: string }>(Role.SUPER_ADMIN, asy
     entityLabel: reg.userName,
     metadata: { projectId: reg.projectId, projectTitle: reg.projectTitle, userId: reg.userId },
   });
+  await recordPointChanges(user, pointChanges);
 
   return Response.json({ success: true });
 });

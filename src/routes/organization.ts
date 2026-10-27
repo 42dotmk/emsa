@@ -7,6 +7,7 @@ import { organization } from "@/db/schema";
 import { diffChanges, recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { parseBody, withRole } from "@/lib/middleware";
+import { syncAllPoints } from "@/lib/points";
 import { deleteObject, getPresignedUploadUrl, validateImageContentType } from "@/lib/s3";
 
 const ORG_ID = 1;
@@ -26,6 +27,9 @@ const getOrganization = async () => {
       email: organization.email,
       phone: organization.phone,
       pillarLabel: organization.pillarLabel,
+      pointsEnabled: organization.pointsEnabled,
+      pointsName: organization.pointsName,
+      pointsIconUrl: organization.pointsIconUrl,
     })
     .from(organization)
     .where(eq(organization.id, ORG_ID))
@@ -61,6 +65,13 @@ const updateOrganization = withRole(Role.SUPER_ADMIN, async (req, user) => {
   if (existing?.logoUrl && data.logoUrl !== undefined && data.logoUrl !== existing.logoUrl) {
     deleteObject(existing.logoUrl).catch(console.error);
   }
+  if (
+    existing?.pointsIconUrl &&
+    data.pointsIconUrl !== undefined &&
+    data.pointsIconUrl !== existing.pointsIconUrl
+  ) {
+    deleteObject(existing.pointsIconUrl).catch(console.error);
+  }
 
   if (updated) {
     const changes = diffChanges(existing ?? {}, updated);
@@ -72,6 +83,12 @@ const updateOrganization = withRole(Role.SUPER_ADMIN, async (req, user) => {
         entityLabel: updated.name || "Organization",
         changes,
       });
+    }
+
+    const pointsTurnedOn = updated.pointsEnabled && !existing?.pointsEnabled;
+    const membershipPointsChanged = existing?.membershipPoints !== updated.membershipPoints;
+    if (pointsTurnedOn || (updated.pointsEnabled && membershipPointsChanged)) {
+      await syncAllPoints(user);
     }
   }
 

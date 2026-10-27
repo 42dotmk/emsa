@@ -1,4 +1,10 @@
-import type { AuditAction, AuditEntityType, MemberFieldType, Role } from "@/constants/enums";
+import type {
+  AuditAction,
+  AuditEntityType,
+  MemberFieldType,
+  PointReason,
+  Role,
+} from "@/constants/enums";
 
 export type ImageEntry =
   | { type: "none" }
@@ -37,6 +43,7 @@ export interface AdminUser {
   role: Role;
   isAlumni: boolean;
   isActive: boolean;
+  pointsBalance: number;
   activations: UserActivation[];
   imageUrl: string | null;
   createdAt: string;
@@ -52,6 +59,7 @@ export interface UserProfile {
   profileCompleted: boolean;
   isAlumni: boolean;
   isActive: boolean;
+  pointsBalance: number;
   createdAt: string;
 }
 
@@ -69,6 +77,7 @@ export interface Project {
   maxParticipants: number | null;
   activeMembersOnly: boolean;
   isPinned: boolean;
+  points: number | null;
   packages: ProjectPackage[];
   createdAt: string;
   updatedAt: string;
@@ -112,6 +121,7 @@ export interface ProjectRegistration {
   packageId: string | null;
   packageName: string | null;
   attended: boolean;
+  pointsAwarded: number;
   certificateUrl: string | null;
   certificateFilename: string | null;
   createdAt: string;
@@ -129,6 +139,9 @@ export interface OrganizationPublic {
   email: string | null;
   phone: string | null;
   pillarLabel: string;
+  pointsEnabled: boolean;
+  pointsName: string;
+  pointsIconUrl: string | null;
 }
 
 export interface PublicProject {
@@ -144,6 +157,7 @@ export interface PublicProject {
   registrationClosesAt: string | null;
   activeMembersOnly: boolean;
   isPinned: boolean;
+  points: number | null;
   canRegister: boolean;
   packages: PublicProjectPackage[];
 }
@@ -184,6 +198,10 @@ export interface Organization {
   email: string | null;
   phone: string | null;
   pillarLabel: string;
+  pointsEnabled: boolean;
+  pointsName: string;
+  pointsIconUrl: string | null;
+  membershipPoints: number;
   updatedAt: string;
 }
 
@@ -310,4 +328,27 @@ export interface AuditLogPage {
 export interface AuditActor {
   id: string;
   name: string;
+}
+
+export interface PointContext {
+  from: number;
+  to: number;
+}
+
+export interface PointTransaction {
+  id: string;
+  amount: number;
+  balanceAfter: number;
+  reason: PointReason;
+  projectId: string | null;
+  projectTitle: string | null;
+  note: string | null;
+  context: PointContext | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+export interface PointsHistory {
+  balance: number;
+  transactions: PointTransaction[];
 }

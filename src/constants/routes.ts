@@ -74,6 +74,8 @@ export const ApiRoutes = {
   POSITIONS: "/api/positions",
   SUPPORTERS: "/api/supporters",
   USERS_ME: "/api/users/me",
+  USERS_ME_POINTS: "/api/users/me/points",
+  ADMIN_USER_POINTS: "/api/admin/users/:id/points",
   MEMBER_FIELDS: "/api/member-fields",
   MEMBER_FIELD_SUGGESTIONS: "/api/member-fields/:key/suggestions",
   ADMIN_MEMBER_FIELDS: "/api/admin/member-fields",

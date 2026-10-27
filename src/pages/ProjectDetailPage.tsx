@@ -16,6 +16,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { Lightbox } from "@/components/Lightbox";
+import { PointsAmount } from "@/components/PointsAmount";
 import { RegistrationStatusBadge } from "@/components/RegistrationStatusBadge";
 import {
   AlertDialog,
@@ -47,6 +48,7 @@ import {
   type Workshop,
 } from "@/constants/types";
 import { useAuth } from "@/context/auth";
+import { usePoints } from "@/hooks/usePoints";
 import { apiClient } from "@/lib/api-client";
 import { cn, formatDate, formatDateTime, getRegistrationStatus } from "@/lib/utils";
 
@@ -368,6 +370,7 @@ function WorkshopsSection({
 }
 
 export function ProjectDetailPage() {
+  const { enabled: pointsEnabled, name: pointsName } = usePoints();
   const { id } = useParams<{ id: string }>();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
@@ -510,6 +513,12 @@ export function ProjectDetailPage() {
                   </Badge>
                 )}
                 <RegistrationStatusBadge status={regStatus} overlay />
+                {pointsEnabled && project.points && (
+                  <Badge className="gap-1 border-0 bg-white/20 text-white hover:bg-white/30">
+                    <PointsAmount amount={project.points} signed className="text-xs" />
+                    {pointsName} for attending
+                  </Badge>
+                )}
               </div>
               <h1 className="mt-3 text-title text-white drop-shadow">{project.title}</h1>
               <div className="mt-2 flex items-center gap-1.5 text-sm text-white/70">

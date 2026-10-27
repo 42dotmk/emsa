@@ -25,6 +25,7 @@ Originally built for **EMSA Macedonia** (European Medical Students' Association)
 - **Members** — email/password and Google OAuth login, profiles with avatars, admin-defined custom profile fields with a completion gate
 - **Projects** — registration windows, participant caps, self-service sign-up, attendance tracking
 - **Roles** — `USER` → `ADMIN` → `SUPER_ADMIN`, enforced server-side; the first registered account becomes the instance owner
+- **Points** — an optional, renameable points system (e.g. "EMSA Credits") with its own logo: members earn points for attending projects and for holding an active membership, super admins can add or remove points with a note, and every change is kept in a per-member history and the audit log
 - **Audit log** — every admin change to projects, workshops, users, memberships, pillars, organization settings, positions, supporters, and member fields is recorded with who, when, and a before/after diff, browsable and filterable by super admins
 - **Rebrandable** — organization name, logo, tagline, socials, and even the "pillars" label (call them committees, departments, chapters, ...) are editable at runtime
 - **Self-contained** — a single Bun process serves both the API and the React SPA; images upload straight to any S3-compatible storage via presigned URLs
@@ -39,7 +40,7 @@ Originally built for **EMSA Macedonia** (European Medical Students' Association)
 
 ## Quick Start
 
-You'll need [Bun](https://bun.sh) >= 1.3.14 and a PostgreSQL database. For the full experience also grab an S3-compatible bucket (e.g. Cloudflare R2), Google OAuth credentials, and a Resend API key.
+You'll need [Bun](https://bun.sh) >= 1.4.4 and a PostgreSQL database. For the full experience also grab an S3-compatible bucket (e.g. Cloudflare R2), Google OAuth credentials, and a Resend API key.
 
 ```bash
 git clone https://github.com/AtanasovskiPetar/emsa.git
@@ -63,7 +64,7 @@ bun start
 
 ## Make It Yours
 
-Almost everything is configured at runtime from the **Organization** admin page: name, logo, tagline, description, socials, board positions, supporters, custom member fields, and the label used for pillars.
+Almost everything is configured at runtime from the **Organization** admin page: name, logo, tagline, description, socials, board positions, supporters, custom member fields, the label used for pillars, and the points system (on/off, name, logo, and points for active membership).
 
 The only code change for a full rebrand is the brand color (default: red), in two places:
 

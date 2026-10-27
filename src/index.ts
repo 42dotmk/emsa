@@ -5,6 +5,7 @@ import { organization, pillars, projects } from "./db/schema";
 import index from "./index.html";
 import { db } from "./lib/db";
 import { env } from "./lib/env";
+import { startPointsScheduler } from "./lib/points";
 import { escapeHtml } from "./lib/utils";
 import { auditLogRoutes } from "./routes/audit-logs";
 import { authRoutes } from "./routes/auth";
@@ -13,6 +14,7 @@ import { galleryRoutes } from "./routes/gallery";
 import { memberFieldRoutes } from "./routes/member-fields";
 import { organizationRoutes } from "./routes/organization";
 import { pillarRoutes } from "./routes/pillars";
+import { pointRoutes } from "./routes/points";
 import { positionRoutes } from "./routes/positions";
 import { projectRoutes } from "./routes/projects";
 import { supporterRoutes } from "./routes/supporters";
@@ -112,6 +114,7 @@ const server = serve({
     ...memberFieldRoutes,
     ...organizationRoutes,
     ...pillarRoutes,
+    ...pointRoutes,
     ...positionRoutes,
     ...projectRoutes,
     ...supporterRoutes,
@@ -125,5 +128,7 @@ const server = serve({
     console: true,
   },
 });
+
+startPointsScheduler();
 
 console.log(`🚀 Server running at ${server.url}`);
