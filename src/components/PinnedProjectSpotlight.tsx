@@ -2,6 +2,7 @@ import { ArrowRight, CalendarDays, Layers, Pin } from "lucide-react";
 import { motion } from "motion/react";
 import { Link } from "react-router-dom";
 
+import { ProjectPointsBadge } from "@/components/ProjectPointsBadge";
 import { RegistrationStatusBadge } from "@/components/RegistrationStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,7 @@ export function PinnedProjectSpotlight({ project }: PinnedProjectSpotlightProps)
                     {project.pillarName}
                   </Badge>
                 )}
+                <ProjectPointsBadge points={project.points} variant="overlay" />
                 <RegistrationStatusBadge status={regStatus} overlay />
               </div>
 
