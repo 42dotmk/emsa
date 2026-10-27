@@ -2,6 +2,7 @@ import { CalendarDays, Layers } from "lucide-react";
 import { motion } from "motion/react";
 import { Link } from "react-router-dom";
 
+import { ProjectPointsBadge } from "@/components/ProjectPointsBadge";
 import { RegistrationStatusBadge } from "@/components/RegistrationStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { PageRoutes } from "@/constants/routes";
@@ -99,6 +100,7 @@ export function ProjectCard({ project, index, featured = false, className }: Pro
                     {project.pillarName}
                   </Badge>
                 )}
+                <ProjectPointsBadge points={project.points} variant="overlay" />
               </div>
               <h3 className="mt-2 text-xl font-bold text-white drop-shadow line-clamp-2">
                 {project.title}
@@ -140,6 +142,11 @@ export function ProjectCard({ project, index, featured = false, className }: Pro
                 status={regStatus}
                 overlay
                 className="absolute right-2 top-2 text-xs"
+              />
+              <ProjectPointsBadge
+                points={project.points}
+                variant="floating"
+                className="absolute bottom-2 left-2"
               />
             </div>
 

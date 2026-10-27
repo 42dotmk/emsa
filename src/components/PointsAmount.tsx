@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 const pointsAmountVariants = cva("inline-flex items-center font-medium tabular-nums", {
   variants: {
     size: {
+      xs: "gap-1 text-xs",
       sm: "gap-1 text-sm",
       md: "gap-1.5 text-base",
       lg: "gap-2.5 text-display",
@@ -18,7 +19,7 @@ const pointsAmountVariants = cva("inline-flex items-center font-medium tabular-n
   defaultVariants: { size: "sm" },
 });
 
-const iconSizes = { sm: "size-4", md: "size-5", lg: "size-10" } as const;
+const iconSizes = { xs: "size-3.5", sm: "size-4", md: "size-5", lg: "size-10" } as const;
 
 function AnimatedNumber({ value }: { value: number }) {
   const reduceMotion = useReducedMotion();
@@ -42,6 +43,7 @@ interface PointsAmountProps extends VariantProps<typeof pointsAmountVariants> {
   showName?: boolean;
   signed?: boolean;
   animated?: boolean;
+  title?: string;
   className?: string;
 }
 
@@ -51,6 +53,7 @@ export function PointsAmount({
   showName = false,
   signed = false,
   animated = false,
+  title,
   className,
 }: PointsAmountProps) {
   const { name, iconUrl } = usePoints();
@@ -58,7 +61,10 @@ export function PointsAmount({
   const value = signed && amount > 0 ? `+${amount}` : String(amount);
 
   return (
-    <span className={cn(pointsAmountVariants({ size }), className)} title={`${amount} ${name}`}>
+    <span
+      className={cn(pointsAmountVariants({ size }), className)}
+      title={title ?? `${amount} ${name}`}
+    >
       {iconUrl ? (
         <img src={iconUrl} alt="" className={cn(iconClass, "rounded-sm object-contain")} />
       ) : (
