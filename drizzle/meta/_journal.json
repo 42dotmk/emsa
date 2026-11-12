@@ -281,6 +281,13 @@
       "when": 1793089042834,
       "tag": "0039_add_points",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794517980820,
+      "tag": "0040_add_membership_ended_email",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,7 @@ Originally built for **EMSA Macedonia** (European Medical Students' Association)
 - **Projects** — registration windows, participant caps, self-service sign-up, attendance tracking
 - **Roles** — `USER` → `ADMIN` → `SUPER_ADMIN`, enforced server-side; the first registered account becomes the instance owner
 - **Points** — an optional, renameable points system (e.g. "EMSA Credits") with its own logo: members earn points for attending projects and for holding an active membership, super admins can add or remove points with a note, and every change is kept in a per-member history and the audit log
+- **Membership emails** — members get an email when their membership ends, whether it expired or an admin ended it early; sent once, at 09:00 in `APP_TIME_ZONE` (default `Europe/Skopje`), and only when `ENV=production`
 - **Audit log** — every admin change to projects, workshops, users, memberships, pillars, organization settings, positions, supporters, and member fields is recorded with who, when, and a before/after diff, browsable and filterable by super admins
 - **Rebrandable** — organization name, logo, tagline, socials, and even the "pillars" label (call them committees, departments, chapters, ...) are editable at runtime
 - **Self-contained** — a single Bun process serves both the API and the React SPA; images upload straight to any S3-compatible storage via presigned URLs

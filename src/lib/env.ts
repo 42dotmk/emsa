@@ -11,6 +11,7 @@ function optional(key: string, fallback: string): string {
 export const env = {
   PORT: parseInt(optional("PORT", "3000"), 10),
   ENV: optional("ENV", "development"),
+  APP_TIME_ZONE: optional("APP_TIME_ZONE", "Europe/Skopje"),
   DB_HOST: optional("DB_HOST", "localhost"),
   DB_PORT: parseInt(optional("DB_PORT", "5432"), 10),
   DB_USER: optional("DB_USER", "postgres"),

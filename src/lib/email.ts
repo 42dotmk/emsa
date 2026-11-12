@@ -91,6 +91,23 @@ export async function sendAccountSetupEmail(
   });
 }
 
+export async function sendMembershipEndedEmail(to: string, name: string): Promise<void> {
+  const brand = await getBrand();
+  await resend.emails.send({
+    from: env.FROM_EMAIL,
+    to,
+    subject: `Your ${brand.orgName} membership has ended`,
+    html: renderTemplate({
+      brand,
+      preheader: `Your ${brand.orgName} membership is no longer active.`,
+      heading: `Hi ${name}, your membership has ended`,
+      intro: `Your membership in <strong>${escapeHtml(brand.orgName)}</strong> is no longer active. Renew it to keep access to projects and benefits for active members.`,
+      cta: { label: "Go to the platform", url: env.APP_URL },
+      outro: "If you think this is a mistake, please get in touch with us.",
+    }),
+  });
+}
+
 // Email clients need hex, so this palette cannot share the oklch tokens in
 // styles/globals.css — keep the two in sync when rebranding (see README "Theming").
 const theme = {

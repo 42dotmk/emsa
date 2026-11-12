@@ -74,6 +74,7 @@ export const users = pgTable("users", {
   isAlumni: boolean("is_alumni").notNull().default(false),
   pointsBalance: integer("points_balance").notNull().default(0),
   membershipPointsHeld: integer("membership_points_held").notNull().default(0),
+  membershipWasActive: boolean("membership_was_active").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

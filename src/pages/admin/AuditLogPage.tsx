@@ -141,6 +141,9 @@ function summarize(entry: AuditLogEntry): string {
     case AuditAction.REORDER:
       return `Reordered ${count ?? ""} items`;
     case AuditAction.SEND_EMAIL:
+      if (entry.metadata?.notice) {
+        return `${entry.metadata.delivered === false ? "Skipped" : "Sent"} "${entry.metadata.notice}" email`;
+      }
       return `Sent welcome email to ${count ?? 0} users`;
     case AuditAction.CREATE:
       return "Created";
