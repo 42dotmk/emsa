@@ -33,6 +33,7 @@ interface EnvFileParams {
   r2PublicUrl: string;
   resendApiKey: pulumi.Output<string>;
   fromEmail: string;
+  appTimeZone: string;
 }
 
 export function makeEnvFileCmd(p: EnvFileParams): pulumi.Output<string> {
@@ -54,6 +55,7 @@ GOOGLE_CLIENT_ID=${p.googleClientId}
 GOOGLE_CLIENT_SECRET=${p.googleClientSecret}
 GOOGLE_REDIRECT_URI=https://${p.domain}/api/auth/google/callback
 APP_URL=https://${p.domain}
+APP_TIME_ZONE=${p.appTimeZone}
 R2_ACCESS_KEY_ID=${p.r2AccessKeyId}
 R2_SECRET_ACCESS_KEY=${p.r2SecretAccessKey}
 R2_ACCOUNT_ID=${p.r2AccountId}

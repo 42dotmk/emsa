@@ -53,6 +53,8 @@ pulumi config set --secret r2AccountId <value>
 
 `fromEmail` defaults to `noreply@<domain>` when unset and must be an address on a domain verified in Resend, or outgoing emails will fail.
 
+`appTimeZone` is an IANA time zone name (e.g. `Europe/Skopje`, the default when unset). It sets `APP_TIME_ZONE`, which decides the local time scheduled emails such as the membership-ended notice are sent at.
+
 ## Backups
 
 When `enableBackup` is `"true"`, a weekly cron job (Sundays at 02:00) runs `pg_dump` on the environment's database, gzips it, and streams it to `r2BackupBucket` via rclone (`r2BackupBucket` is only read when backups are enabled). Logs are written to `/var/log/pg-backup-<env>.log` on the server.

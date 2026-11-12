@@ -129,6 +129,7 @@ if (deployType === "app") {
   const resendApiKey = config.requireSecret("resendApiKey");
   const fromEmail = config.get("fromEmail") ?? `noreply@${domain}`;
   const appEnv = config.require("appEnv");
+  const appTimeZone = config.get("appTimeZone") ?? "Europe/Skopje";
 
   const pulumiOrg = config.require("pulumiOrg");
   const infraStack = new pulumi.StackReference(`${pulumiOrg}/emsa/infra`);
@@ -209,6 +210,7 @@ if (deployType === "app") {
     r2PublicUrl,
     resendApiKey,
     fromEmail,
+    appTimeZone,
   });
 
   const writeEnv = new command.remote.Command(

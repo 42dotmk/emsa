@@ -5,6 +5,7 @@ import { organization, pillars, projects } from "./db/schema";
 import index from "./index.html";
 import { db } from "./lib/db";
 import { env } from "./lib/env";
+import { startMembershipScheduler } from "./lib/membership";
 import { startPointsScheduler } from "./lib/points";
 import { escapeHtml } from "./lib/utils";
 import { auditLogRoutes } from "./routes/audit-logs";
@@ -130,5 +131,6 @@ const server = serve({
 });
 
 startPointsScheduler();
+startMembershipScheduler();
 
 console.log(`🚀 Server running at ${server.url}`);
