@@ -10,6 +10,7 @@ config:
   emsa:enableBackup: "false"
   emsa:r2BackupBucket: your-backup-bucket
   emsa:fromEmail: noreply@example.org
+  emsa:appTimeZone: Europe/Skopje
   emsa:dbPassword:
     secure: Secret[dbPassword]
   emsa:jwtSecret:
