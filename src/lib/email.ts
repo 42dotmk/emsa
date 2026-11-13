@@ -93,19 +93,80 @@ export async function sendAccountSetupEmail(
 
 export async function sendMembershipEndedEmail(to: string, name: string): Promise<void> {
   const brand = await getBrand();
+  const contacts = await getContactLinks();
+  const orgName = escapeHtml(brand.orgName);
   await resend.emails.send({
     from: env.FROM_EMAIL,
     to,
     subject: `Your ${brand.orgName} membership has ended`,
     html: renderTemplate({
       brand,
-      preheader: `Your ${brand.orgName} membership is no longer active.`,
+      preheader: `Your ${brand.orgName} membership is no longer active. Here is how to renew it.`,
       heading: `Hi ${name}, your membership has ended`,
-      intro: `Your membership in <strong>${escapeHtml(brand.orgName)}</strong> is no longer active. Renew it to keep access to projects and benefits for active members.`,
-      cta: { label: "Go to the platform", url: env.APP_URL },
-      outro: "If you think this is a mistake, please get in touch with us.",
+      intro: `Your membership in <strong>${orgName}</strong> is no longer active. To renew yours, please contact ${orgName}${contacts.length > 0 ? " through any of these channels:" : " directly."}`,
+      details: renderContactList(contacts),
+      outro:
+        contacts.length > 0
+          ? "If you think this is a mistake, please let us know through the same channels."
+          : "If you think this is a mistake, please let us know.",
     }),
   });
+}
+
+interface ContactLink {
+  label: string;
+  text: string;
+  url: string;
+}
+
+async function getContactLinks(): Promise<ContactLink[]> {
+  const [org] = await db
+    .select({
+      email: organization.email,
+      instagramUrl: organization.instagramUrl,
+      facebookUrl: organization.facebookUrl,
+      phone: organization.phone,
+    })
+    .from(organization)
+    .where(eq(organization.id, 1))
+    .limit(1);
+  if (!org) return [];
+
+  const links: ContactLink[] = [];
+  if (org.email) links.push({ label: "Email", text: org.email, url: `mailto:${org.email}` });
+  if (org.instagramUrl) {
+    links.push({ label: "Instagram", text: displayUrl(org.instagramUrl), url: org.instagramUrl });
+  }
+  if (org.facebookUrl) {
+    links.push({ label: "Facebook", text: displayUrl(org.facebookUrl), url: org.facebookUrl });
+  }
+  if (org.phone) {
+    links.push({ label: "Phone", text: org.phone, url: `tel:${org.phone.replace(/[^\d+]/g, "")}` });
+  }
+  return links;
+}
+
+function displayUrl(url: string): string {
+  return url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+}
+
+function renderContactList(links: ContactLink[]): string {
+  if (links.length === 0) return "";
+  const items = links
+    .map(
+      (link, index) => `<tr>
+          <td style="padding:${index === 0 ? "0" : "12px"} 0 0 0">
+            <div style="font-size:12px;font-weight:600;color:${theme.mutedForeground};text-transform:uppercase;letter-spacing:0.04em">${escapeHtml(link.label)}</div>
+            <a href="${escapeHtml(link.url)}" target="_blank" style="display:inline-block;margin-top:2px;font-size:15px;color:${theme.primary};text-decoration:none;overflow-wrap:anywhere">${escapeHtml(link.text)}</a>
+          </td>
+        </tr>`
+    )
+    .join("");
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0 4px 0;width:100%;background:${theme.surface};border-radius:10px">
+      <tr><td style="padding:16px 18px">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%">${items}</table>
+      </td></tr>
+    </table>`;
 }
 
 // Email clients need hex, so this palette cannot share the oklch tokens in
@@ -150,12 +211,13 @@ interface TemplateOptions {
   preheader?: string;
   heading: string;
   intro: string;
+  details?: string;
   cta?: { label: string; url: string };
   outro?: string;
 }
 
 function renderTemplate(opts: TemplateOptions): string {
-  const { brand, preheader, heading, intro, cta, outro } = opts;
+  const { brand, preheader, heading, intro, details, cta, outro } = opts;
   const orgName = escapeHtml(brand.orgName);
   const safeHeading = escapeHtml(heading);
   const initial = orgName.charAt(0).toUpperCase();
@@ -217,6 +279,7 @@ function renderTemplate(opts: TemplateOptions): string {
         <tr>
           <td style="padding:14px 40px 8px 40px;font-size:15px;line-height:1.65;color:${theme.foreground}">
             <p style="margin:0">${intro}</p>
+            ${details ?? ""}
             ${ctaBlock}
             ${outroBlock}
           </td>
